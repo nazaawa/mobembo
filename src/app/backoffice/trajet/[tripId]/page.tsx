@@ -32,7 +32,7 @@ export default async function FicheTrajet(props: PageProps<"/backoffice/trajet/[
   const billets = db
     .prepare(
       `SELECT t.id, t.ticket_code, t.status, t.passenger_name, t.passenger_phone,
-              t.price_amount, t.price_currency, t.sequence_number,
+              t.price_amount, t.price_currency, t.sequence_number, t.booking_id,
               s.seat_number, b.channel, u.name AS vendeur
          FROM tickets t
          JOIN trip_seats s ON s.id = t.trip_seat_id
@@ -49,6 +49,7 @@ export default async function FicheTrajet(props: PageProps<"/backoffice/trajet/[
     price_amount: number;
     price_currency: string;
     sequence_number: number | null;
+    booking_id: string;
     seat_number: string;
     channel: string;
     vendeur: string | null;
@@ -138,7 +139,7 @@ export default async function FicheTrajet(props: PageProps<"/backoffice/trajet/[
           <Empty>Aucun billet vendu sur ce départ.</Empty>
         ) : (
           <Table
-            headers={["Siège", "Passager", "Code", "N°", "Canal", "Vendeur", "Prix", "État"]}
+            headers={["Siège", "Passager", "Code", "N°", "Canal", "Vendeur", "Prix", "État", ""]}
           >
             {billets.map((billet) => (
               <tr key={billet.id}>
@@ -172,6 +173,16 @@ export default async function FicheTrajet(props: PageProps<"/backoffice/trajet/[
                   >
                     {TICKET_STATUS_LABELS[billet.status]}
                   </Badge>
+                </td>
+                <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                  <a
+                    href={`/guichet/recu/${billet.booking_id}?billet=${billet.id}`}
+                    target="_blank"
+                    rel="noopener"
+                    className="text-[11px] text-accent hover:underline"
+                  >
+                    reçu
+                  </a>
                 </td>
               </tr>
             ))}

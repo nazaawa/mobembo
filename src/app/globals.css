@@ -85,12 +85,57 @@ textarea {
   color: inherit;
 }
 
+/*
+ * Impression des reçus de guichet (§2.4.5 « billet émis, numéro séquentiel, QR
+ * généré »). Le client qui se déplace à l'agence est souvent celui qui n'a pas
+ * de smartphone : le billet doit exister sur papier.
+ *
+ * Le format cible est le rouleau thermique 80 mm des caisses d'agence. Un
+ * bloc de 76 mm passe aussi sur A4 sans réglage particulier, et plusieurs
+ * billets s'y empilent au lieu de gâcher une feuille chacun.
+ */
+@page {
+  margin: 6mm;
+}
+
 @media print {
   .sans-impression {
     display: none !important;
   }
+
   body {
     background: #fff;
     color: #000;
+  }
+
+  /* L'encre couleur coûte cher et les thermiques n'en ont pas : tout en noir. */
+  .feuille-impression {
+    background: #fff;
+    color: #000;
+  }
+
+  /* Le rouleau thermique fait 80 mm de large : chaque millimètre de marge
+     héritée de la mise en page écran rogne le billet. */
+  .zone-impression {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .billet-imprimable {
+    width: 76mm;
+    border: 1px dashed #000 !important;
+    background: #fff !important;
+    color: #000 !important;
+    /* Un billet coupé en deux par un saut de page est un billet inutilisable. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin: 0 0 4mm;
+    box-shadow: none !important;
+  }
+
+  .billet-imprimable * {
+    color: #000 !important;
+    border-color: #000 !important;
   }
 }

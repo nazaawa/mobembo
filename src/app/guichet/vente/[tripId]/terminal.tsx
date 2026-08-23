@@ -29,11 +29,18 @@ import { useEnLigne, useStockageLocal } from "@/lib/client/store";
 import type { SeatAvailability } from "@/lib/domain/seats";
 
 interface BilletEmis {
+  id: string | null;
   code: string;
   siege: string;
   passager: string;
   sequence: number | null;
   horsLigne: boolean;
+}
+
+interface VenteEmise {
+  /** Réservation à imprimer ; absente tant qu'une vente hors-ligne n'est pas synchronisée. */
+  reservationId: string | null;
+  billets: BilletEmis[];
 }
 
 /**
@@ -77,7 +84,7 @@ export function TerminalVente({
   const [devise, setDevise] = useState<Currency>(deviseCaisse);
   const [occupe, setOccupe] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [emis, setEmis] = useState<BilletEmis[]>([]);
+  const [emis, setEmis] = useState<VenteEmise | null>(null);
 
   const guichet = disponibilite.find((a) => a.channel === "GUICHET");
   const prixUnitaire = devise === "USD" ? prixUsd : prixCdf;
@@ -170,15 +177,17 @@ export function TerminalVente({
             synchronise: false,
           });
         }
-        setEmis(
-          selection.map((seat) => ({
+        setEmis({
+          reservationId: null,
+          billets: selection.map((seat) => ({
+            id: null,
             code: "à synchroniser",
             siege: seat,
             passager: nom.trim(),
             sequence: null,
             horsLigne: true,
           })),
-        );
+        });
       } else {
         const response = await fetch("/api/guichet/vente", {
           method: "POST",
@@ -187,19 +196,22 @@ export function TerminalVente({
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.message ?? "Vente refusée.");
-        setEmis(
-          (data.billets as Array<{
+        setEmis({
+          reservationId: (data.reservation as { id: string }).id,
+          billets: (data.billets as Array<{
+            id: string;
             ticket_code: string;
             sequence_number: number | null;
             passenger_name: string;
           }>).map((billet, index) => ({
+            id: billet.id,
             code: billet.ticket_code,
             siege: selection[index],
             passager: billet.passenger_name,
             sequence: billet.sequence_number,
             horsLigne: false,
           })),
-        );
+        });
         router.refresh();
       }
       setSelection([]);
@@ -349,10 +361,25 @@ export function TerminalVente({
           </div>
         )}
 
-        {emis.length > 0 && (
-          <Card title="Billets émis" subtitle="Remettez le reçu au passager.">
+        {emis && emis.billets.length > 0 && (
+          <Card
+            title="Billets émis"
+            subtitle="Remettez le reçu au passager."
+            actions={
+              emis.reservationId ? (
+                <a
+                  href={`/guichet/recu/${emis.reservationId}?auto=1`}
+                  target="_blank"
+                  rel="noopener"
+                  className={buttonClass}
+                >
+                  Imprimer le reçu
+                </a>
+              ) : null
+            }
+          >
             <ul className="space-y-2 text-sm">
-              {emis.map((billet, index) => (
+              {emis.billets.map((billet, index) => (
                 <li
                   key={index}
                   className="rounded-lg border border-succes/40 bg-succes-doux px-3 py-2"
@@ -365,13 +392,25 @@ export function TerminalVente({
                       <Badge tone="succes">#{billet.sequence}</Badge>
                     )}
                   </div>
-                  <div className="mt-0.5 text-xs text-texte-doux">
-                    Siège {billet.siege} · {billet.passager}
+                  <div className="mt-0.5 flex items-center justify-between gap-2">
+                    <span className="text-xs text-texte-doux">
+                      Siège {billet.siege} · {billet.passager}
+                    </span>
+                    {emis.reservationId && billet.id && emis.billets.length > 1 && (
+                      <a
+                        href={`/guichet/recu/${emis.reservationId}?billet=${billet.id}&auto=1`}
+                        target="_blank"
+                        rel="noopener"
+                        className="text-[11px] text-accent underline"
+                      >
+                        imprimer seul
+                      </a>
+                    )}
                   </div>
                 </li>
               ))}
             </ul>
-            {emis.some((b) => b.horsLigne) && (
+            {emis.billets.some((b) => b.horsLigne) && (
               <p className="mt-2 text-[11px] text-attention">
                 Ces billets recevront leur numéro et leur QR au retour du réseau. Notez le siège et
                 le nom sur le reçu papier de la compagnie en attendant.

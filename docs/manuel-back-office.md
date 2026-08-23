@@ -63,6 +63,16 @@ ligne invendues, deux heures avant le départ.
 Seules les places **encore disponibles** se déplacent. Chaque rééquilibrage est
 enregistré au journal d'audit.
 
+### Réimprimer un reçu
+
+La fiche d'un départ liste tous ses billets. La colonne de droite porte un lien
+**reçu** qui rouvre le billet au format imprimable — pour un passager qui a
+perdu le sien et se présente à l'agence.
+
+Un billet annulé, transféré ou revendu s'imprime avec un bandeau « ne pas
+remettre » et **sans QR** : réimprimer un QR périmé enverrait le passager se
+faire refuser à l'embarquement.
+
 ### Annuler un départ
 
 Motif obligatoire. L'écran vous rappelle ensuite d'appliquer la grille de

@@ -44,9 +44,28 @@ l'application vous demande laquelle vous exercez maintenant. Choisissez
 3. Saisissez le **nom** et le **téléphone** du passager.
 4. Vérifiez la devise encaissée.
 5. Cliquez **Encaisser**.
+6. Cliquez **Imprimer le reçu** et remettez-le au passager.
 
 Le billet s'affiche avec son code (par exemple `K85X-7SHA`) et son numéro de
 séquence. Un SMS part automatiquement vers le passager.
+
+### Imprimer le reçu
+
+Cliquez **Imprimer le reçu** : la fenêtre d'impression s'ouvre toute seule.
+Remettez le papier au passager.
+
+> **Imprimez systématiquement.** Le passager qui vient au guichet est très
+> souvent celui qui n'a pas de smartphone — c'est pour cela qu'il s'est
+> déplacé. Sans papier, le contrôleur devra ressaisir son code à la main à
+> l'embarquement, et la file avance moins vite.
+
+Le reçu porte le QR : il se scanne exactement comme celui affiché sur un
+téléphone. Un même reçu ne passe qu'une fois — une photocopie est refusée avec
+la mention « déjà scanné ».
+
+Pour une vente de plusieurs places, chaque passager a **son** billet et **son**
+QR. Le lien « imprimer seul » à côté d'une ligne réimprime ce billet-là, par
+exemple si un passager du groupe perd le sien.
 
 ### Sièges grisés
 
@@ -144,6 +163,7 @@ terminé toutes vos ventes avant.
 | Siège grisé                      | Demander un rééquilibrage au gérant   |
 | Prix qui paraît faux             | Prévenir le gérant, ne pas encaisser  |
 | Passager veut annuler            | Renvoyer vers le gérant               |
+| Passager a perdu son reçu        | Le gérant le réimprime depuis le back-office |
 | Coupure réseau, quota téléchargé | Continuer à vendre normalement        |
 | Coupure réseau, aucun quota      | Arrêter la vente                      |
 | Vente refusée à la synchro       | Prévenir le gérant immédiatement      |

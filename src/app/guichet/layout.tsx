@@ -15,7 +15,7 @@ export default async function GuichetLayout({ children }: LayoutProps<"/guichet"
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="border-b border-bordure bg-surface">
+      <header className="sans-impression border-b border-bordure bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
           <Link href="/guichet" className="flex items-baseline gap-2">
             <span className="text-base font-semibold tracking-tight">Mobembo</span>
@@ -40,7 +40,9 @@ export default async function GuichetLayout({ children }: LayoutProps<"/guichet"
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-5">{children}</main>
+      <main className="zone-impression mx-auto w-full max-w-6xl flex-1 px-4 py-5">
+        {children}
+      </main>
     </div>
   );
 }

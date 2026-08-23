@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { searchTrips, knownCities } from "@/lib/domain/planning";
 import { activeListings } from "@/lib/domain/resale";
-import { formatTime, formatDateTime } from "@/lib/core/time";
+import { formatTime, formatDateTime, todayInKinshasa } from "@/lib/core/time";
 import { Card, Badge, Empty, Money, Why } from "@/components/ui";
 import { SearchForm } from "../search-form";
 
@@ -13,7 +13,7 @@ export default async function Recherche(props: PageProps<"/recherche">) {
   const origine = typeof params.origine === "string" ? params.origine : "";
   const destination = typeof params.destination === "string" ? params.destination : "";
   const date =
-    typeof params.date === "string" ? params.date : new Date().toISOString().slice(0, 10);
+    typeof params.date === "string" ? params.date : todayInKinshasa();
 
   const villes = knownCities();
   const resultats =

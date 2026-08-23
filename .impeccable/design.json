@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-23T23:59:00+01:00",
+  "title": "Design System: Mobembo",
+  "extensions": {
+    "colorMeta": {
+      "midnight": { "role": "primary", "displayName": "Bleu départ", "canonical": "#0d2142" },
+      "crimson": { "role": "secondary", "displayName": "Rouge mouvement", "canonical": "#d7193f" },
+      "crimson-deep": { "role": "secondary", "displayName": "Rouge mouvement profond", "canonical": "#b71335" },
+      "crimson-light": { "role": "secondary", "displayName": "Rouge mouvement clair", "canonical": "#ff7a91" },
+      "cloud": { "role": "neutral", "displayName": "Nuage", "canonical": "#f3f5f9" },
+      "print-black": { "role": "neutral", "displayName": "Noir thermique", "canonical": "#000000" }
+    },
+    "shadows": [
+      { "name": "search-lift", "value": "0 24px 60px rgba(8, 22, 45, 0.18)", "purpose": "Carte de recherche superposée au hero." }
+    ],
+    "motion": [
+      { "name": "ease-departure", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Interactions de navigation et de CTA." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Mobembo Logo",
+      "kind": "custom",
+      "description": "Wordmark horizontal canonique pour les headers sur surface claire.",
+      "html": "<img class=\"mobembo-logo\" src=\"/brand/mobembo-logo.png\" alt=\"Mobembo\">",
+      "css": ".mobembo-logo { display: block; height: 36px; width: auto; object-fit: contain; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Le départ bien organisé",
+    "rules": ["Le rouge indique une action ou une alerte.", "Une photographie forte vaut mieux qu'une collection d'icônes décoratives."],
+    "dos": ["Garder la recherche dominante.", "Conserver des libellés explicites."],
+    "donts": ["Ne pas inventer de données commerciales.", "Ne pas descendre sous 44 px pour les actions tactiles."]
+  }
+}

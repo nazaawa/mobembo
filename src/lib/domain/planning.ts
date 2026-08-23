@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { getDb, tx } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
-import { nowIso } from "@/lib/core/time";
+import { dayBounds, nowIso } from "@/lib/core/time";
 import { errors } from "@/lib/core/errors";
 import { audit } from "./audit";
 import { materialiseTripSeats } from "./seats";
@@ -325,8 +325,7 @@ export function searchTrips(params: {
   db?: Database;
 }): SearchResult[] {
   const db = params.db ?? getDb();
-  const start = `${params.day}T00:00:00.000Z`;
-  const end = `${params.day}T23:59:59.999Z`;
+  const { start, end } = dayBounds(params.day);
 
   return db
     .prepare(
@@ -345,7 +344,7 @@ export function searchTrips(params: {
          JOIN trip_prices p ON p.trip_id = t.id AND p.category = b.category
         WHERE LOWER(r.origin_city) = LOWER(?)
           AND LOWER(r.destination_city) = LOWER(?)
-          AND t.departure_datetime BETWEEN ? AND ?
+          AND t.departure_datetime >= ? AND t.departure_datetime < ?
           AND t.status IN ('PLANIFIE','EN_VENTE')
           -- §2.2 : le mode « départ à remplissage » ne s'affiche jamais en ligne.
           AND t.departure_mode = 'HORAIRE_FIXE'

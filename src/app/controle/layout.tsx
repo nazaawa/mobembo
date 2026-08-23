@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MobemboLogo } from "@/components/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +13,8 @@ export default function ControleLayout({ children }: LayoutProps<"/controle">) {
     <div className="flex min-h-full flex-col">
       <header className="border-b border-bordure bg-surface">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-2.5">
-          <Link href="/controle" className="flex items-baseline gap-2">
-            <span className="text-base font-semibold tracking-tight">Mobembo</span>
+          <Link href="/controle" className="flex min-h-11 items-center gap-2" aria-label="Mobembo Contrôleur">
+            <MobemboLogo alt="" className="h-7 w-auto" />
             <span className="rounded bg-accent-doux px-1.5 py-0.5 text-[11px] font-medium text-accent">
               Contrôleur
             </span>

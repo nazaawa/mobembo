@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { currentSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/domain/types";
+import { MobemboLogo } from "@/components/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +39,8 @@ export default async function BackofficeLayout({ children }: LayoutProps<"/backo
       <header className="border-b border-bordure bg-surface">
         <div className="mx-auto max-w-7xl px-4">
           <div className="flex flex-wrap items-center justify-between gap-3 py-2.5">
-            <Link href="/backoffice" className="flex items-baseline gap-2">
-              <span className="text-base font-semibold tracking-tight">Mobembo</span>
+            <Link href="/backoffice" className="flex min-h-11 items-center gap-2" aria-label="Mobembo Back-office">
+              <MobemboLogo alt="" className="h-7 w-auto" />
               <span className="rounded bg-accent-doux px-1.5 py-0.5 text-[11px] font-medium text-accent">
                 Back-office
               </span>

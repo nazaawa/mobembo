@@ -2,6 +2,7 @@ import Link from "next/link";
 import { currentSession } from "@/lib/auth/session";
 import { ROLE_LABELS } from "@/lib/domain/types";
 import { BarreEtat } from "./barre-etat";
+import { MobemboLogo } from "@/components/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +18,8 @@ export default async function GuichetLayout({ children }: LayoutProps<"/guichet"
     <div className="flex min-h-full flex-col">
       <header className="sans-impression border-b border-bordure bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-          <Link href="/guichet" className="flex items-baseline gap-2">
-            <span className="text-base font-semibold tracking-tight">Mobembo</span>
+          <Link href="/guichet" className="flex min-h-11 items-center gap-2" aria-label="Mobembo Guichet">
+            <MobemboLogo alt="" className="h-7 w-auto" />
             <span className="rounded bg-accent-doux px-1.5 py-0.5 text-[11px] font-medium text-accent">
               Guichet
             </span>

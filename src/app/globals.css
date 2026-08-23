@@ -7,41 +7,25 @@
  */
 
 :root {
-  --fond: #f6f7f9;
+  --fond: #f3f5f9;
   --surface: #ffffff;
-  --surface-alt: #eef1f5;
-  --texte: #14181f;
+  --surface-alt: #eef1f6;
+  --texte: #14213d;
   --texte-doux: #5b6472;
-  --bordure: #d9dee6;
-  --accent: #0b5d3b;
-  --accent-doux: #e6f2ec;
+  --bordure: #dce2eb;
+  --accent: #d7193f;
+  --accent-profond: #b71335;
+  --accent-clair: #ff7a91;
+  --accent-doux: #fff0f3;
   --accent-texte: #ffffff;
-  --alerte: #a3221d;
-  --alerte-doux: #fbeae9;
+  --navy: #0d2142;
+  --navy-profond: #08162d;
+  --alerte: #b71335;
+  --alerte-doux: #fff0f3;
   --attention: #8a5a00;
   --attention-doux: #fdf3e0;
-  --succes: #14663f;
-  --succes-doux: #e4f3ea;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fond: #0e1116;
-    --surface: #161b22;
-    --surface-alt: #1f262f;
-    --texte: #e8ecf1;
-    --texte-doux: #9aa4b2;
-    --bordure: #2c343e;
-    --accent: #3fae7c;
-    --accent-doux: #14241d;
-    --accent-texte: #06130d;
-    --alerte: #f0837c;
-    --alerte-doux: #2a1615;
-    --attention: #e0ad57;
-    --attention-doux: #2a2113;
-    --succes: #58c48d;
-    --succes-doux: #12241a;
-  }
+  --succes: #16794b;
+  --succes-doux: #e8f6ef;
 }
 
 @theme inline {
@@ -52,8 +36,12 @@
   --color-texte-doux: var(--texte-doux);
   --color-bordure: var(--bordure);
   --color-accent: var(--accent);
+  --color-accent-profond: var(--accent-profond);
+  --color-accent-clair: var(--accent-clair);
   --color-accent-doux: var(--accent-doux);
   --color-accent-texte: var(--accent-texte);
+  --color-navy: var(--navy);
+  --color-navy-profond: var(--navy-profond);
   --color-alerte: var(--alerte);
   --color-alerte-doux: var(--alerte-doux);
   --color-attention: var(--attention);
@@ -62,6 +50,8 @@
   --color-succes-doux: var(--succes-doux);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-outfit);
+  --ease-depart: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 body {
@@ -69,6 +59,51 @@ body {
   color: var(--texte);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   -webkit-text-size-adjust: 100%;
+}
+
+::selection {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  outline-offset: 3px;
+}
+
+/* Entrée légère du premier écran (hero, recherche) : un seul mouvement,
+   jamais en boucle — cf. DESIGN.md « Don't ajouter de décor gratuit ». */
+@keyframes leve-entree {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hero-installation {
+  from {
+    opacity: 0;
+    transform: scale(1.045);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Le POS et le terminal contrôleur s'utilisent debout, au doigt, parfois en

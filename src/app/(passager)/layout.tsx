@@ -32,10 +32,13 @@ export default async function PassagerLayout({ children }: LayoutProps<"/">) {
                 >
                   Mes billets
                 </Link>
-                <span className="hidden items-center gap-1.5 rounded-md bg-surface-alt px-2.5 py-2 text-xs text-texte-doux md:inline-flex">
+                <Link
+                  href="/profil"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-[10px] border border-bordure px-3.5 font-semibold text-navy transition-colors duration-300 ease-depart hover:border-accent hover:text-accent"
+                >
                   <span className="h-1.5 w-1.5 rounded-full bg-succes" aria-hidden />
-                  {passager.phone}
-                </span>
+                  Profil
+                </Link>
               </>
             ) : (
               <Link

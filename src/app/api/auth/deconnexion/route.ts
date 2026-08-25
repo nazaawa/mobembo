@@ -4,7 +4,7 @@ import { logout } from "@/lib/auth";
 import { SESSION_COOKIE } from "@/lib/auth/session";
 
 export const POST = handler(async ({ session }) => {
-  if (session) logout(session.id);
+  if (session) await logout(session.id);
   const response = NextResponse.json({ deconnecte: true });
   response.cookies.delete(SESSION_COOKIE);
   return response;

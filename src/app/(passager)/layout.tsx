@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { currentSession } from "@/lib/auth/session";
-import { MobemboLogo } from "@/components/brand";
+import { PassengerHeader } from "./passenger-header";
 
 /**
  * PWA passager (§2.5). Coquille volontairement légère : §3.4 exige
@@ -12,47 +12,12 @@ export default async function PassagerLayout({ children }: LayoutProps<"/">) {
 
   return (
     <div className="flex min-h-full flex-col bg-fond">
-      <header className="sticky top-0 z-30 border-b border-bordure bg-surface/95 backdrop-blur-md">
-        <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-5 px-4 sm:px-6">
-          <Link href="/" className="group flex items-center gap-3" aria-label="Mobembo, accueil">
-            <MobemboLogo alt="" className="h-9 w-auto transition-transform duration-300 ease-depart group-hover:-translate-y-0.5 motion-reduce:transform-none motion-reduce:transition-none" />
-          </Link>
-          <nav className="flex items-center gap-2 text-sm sm:gap-7" aria-label="Navigation passager">
-            <Link
-              href="/"
-              className="relative hidden font-medium text-navy after:absolute after:-bottom-1.5 after:left-0 after:h-[2px] after:w-0 after:rounded-full after:bg-accent after:transition-[width] after:duration-300 after:ease-depart hover:text-accent hover:after:w-full sm:block"
-            >
-              Accueil
-            </Link>
-            {passager ? (
-              <>
-                <Link
-                  href="/mes-billets"
-                  className="relative inline-flex min-h-11 items-center px-1 font-medium text-navy after:absolute after:-bottom-1 after:left-1 after:h-[2px] after:w-0 after:rounded-full after:bg-accent after:transition-[width] after:duration-300 after:ease-depart hover:text-accent hover:after:w-[calc(100%-0.5rem)]"
-                >
-                  Mes billets
-                </Link>
-                <Link
-                  href="/profil"
-                  className="inline-flex min-h-11 items-center gap-2 rounded-[10px] border border-bordure px-3.5 font-semibold text-navy transition-colors duration-300 ease-depart hover:border-accent hover:text-accent"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-succes" aria-hidden />
-                  Profil
-                </Link>
-              </>
-            ) : (
-              <Link
-                href="/mes-billets"
-                className="inline-flex min-h-11 items-center rounded-[10px] border border-bordure px-3.5 font-semibold text-navy transition-colors duration-300 ease-depart hover:border-accent hover:text-accent"
-              >
-                Mes billets
-              </Link>
-            )}
-          </nav>
-        </div>
-      </header>
+      <a href="#contenu-principal" className="fixed left-4 top-3 z-50 -translate-y-20 rounded-[10px] bg-navy px-4 py-3 text-sm font-bold text-white transition-transform focus:translate-y-0">
+        Aller au contenu
+      </a>
+      <PassengerHeader authenticated={Boolean(passager)} />
 
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+      <main id="contenu-principal" tabIndex={-1} className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
 
       <footer className="mt-12 bg-navy-profond text-white">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 md:grid-cols-[1.5fr_1fr_1fr]">

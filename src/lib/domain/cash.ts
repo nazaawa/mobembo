@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { DbHandle } from "@/lib/db";
 import { getDb, tx } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
 import { nowIso } from "@/lib/core/time";
@@ -17,20 +17,20 @@ import { companyPolicy, getAgency, getCompany, type CashSessionRow } from "./rep
  * dirigeant voit pour la première fois ses recettes réelles »). Elle est
  * calculée par le serveur, jamais saisie.
  */
-export function openCashSession(params: {
+export async function openCashSession(params: {
   agencyId: string;
   userId: string;
   openingFloat: number;
   currency: Currency;
   deviceId?: string | null;
   actorRole: string;
-}): CashSessionRow {
-  return tx((db) => {
-    const open = db
-      .prepare(
+}): Promise<CashSessionRow> {
+  return tx(async (db) => {
+    const open = await db
+      .prepare<{ id: string }>(
         `SELECT id FROM cash_sessions WHERE user_id = ? AND agency_id = ? AND closed_at IS NULL`,
       )
-      .get(params.userId, params.agencyId) as { id: string } | undefined;
+      .get(params.userId, params.agencyId);
     if (open) {
       throw errors.conflict(
         "CAISSE_DEJA_OUVERTE",
@@ -40,23 +40,25 @@ export function openCashSession(params: {
     if (params.openingFloat < 0) throw errors.invalid("Le fond de caisse ne peut être négatif.");
 
     const id = newId("csh");
-    db.prepare(
-      `INSERT INTO cash_sessions
+    await db
+      .prepare(
+        `INSERT INTO cash_sessions
          (id, agency_id, user_id, opened_at, opening_float, currency, device_id, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      id,
-      params.agencyId,
-      params.userId,
-      nowIso(),
-      params.openingFloat,
-      params.currency,
-      params.deviceId ?? null,
-      nowIso(),
-    );
+      )
+      .run(
+        id,
+        params.agencyId,
+        params.userId,
+        nowIso(),
+        params.openingFloat,
+        params.currency,
+        params.deviceId ?? null,
+        nowIso(),
+      );
 
-    const agency = getAgency(params.agencyId, db);
-    audit(
+    const agency = await getAgency(params.agencyId, db);
+    await audit(
       {
         userId: params.userId,
         role: params.actorRole,
@@ -69,7 +71,9 @@ export function openCashSession(params: {
       },
       db,
     );
-    return db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(id) as CashSessionRow;
+    return (await db.prepare<CashSessionRow>(`SELECT * FROM cash_sessions WHERE id = ?`).get(
+      id,
+    )) as CashSessionRow;
   });
 }
 
@@ -89,38 +93,38 @@ export interface CashSessionSummary {
   }>;
 }
 
-export function cashSessionSummary(
+export async function cashSessionSummary(
   sessionId: string,
-  db: Database = getDb(),
-): CashSessionSummary {
-  const session = db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId) as
-    | CashSessionRow
-    | undefined;
+  db: DbHandle = getDb(),
+): Promise<CashSessionSummary> {
+  const session = await db
+    .prepare<CashSessionRow>(`SELECT * FROM cash_sessions WHERE id = ?`)
+    .get(sessionId);
   if (!session) throw errors.notFound("Session de caisse");
 
-  const totals = db
-    .prepare(
+  const totals = (await db
+    .prepare<{ ventes: number; remboursements: number }>(
       `SELECT
          COALESCE(SUM(CASE WHEN type = 'VENTE' THEN amount ELSE 0 END), 0) AS ventes,
          COALESCE(SUM(CASE WHEN type IN ('REMBOURSEMENT','ANNULATION') THEN amount ELSE 0 END), 0) AS remboursements
        FROM cash_movements WHERE cash_session_id = ?`,
     )
-    .get(sessionId) as { ventes: number; remboursements: number };
+    .get(sessionId)) as { ventes: number; remboursements: number };
 
-  const tickets = db
-    .prepare(
+  const tickets = (await db
+    .prepare<{ n: number }>(
       `SELECT COUNT(*) AS n FROM tickets t
          JOIN bookings b ON b.id = t.booking_id
         WHERE b.cash_session_id = ?`,
     )
-    .get(sessionId) as { n: number };
+    .get(sessionId)) as { n: number };
 
-  const mouvements = db
-    .prepare(
+  const mouvements = await db
+    .prepare<CashSessionSummary["mouvements"][number]>(
       `SELECT id, type, amount, currency, label, created_at FROM cash_movements
         WHERE cash_session_id = ? ORDER BY created_at DESC`,
     )
-    .all(sessionId) as CashSessionSummary["mouvements"];
+    .all(sessionId);
 
   return {
     session,
@@ -136,15 +140,15 @@ export function cashSessionSummary(
  * §2.4 : « Une session ne peut être fermée deux fois ni modifiée après
  * fermeture. » L'écart s'affiche immédiatement au gérant.
  */
-export function closeCashSession(params: {
+export async function closeCashSession(params: {
   sessionId: string;
   countedAmount: number;
   actor: { userId: string; role: string };
   ip?: string | null;
   device?: string | null;
-}): CashSessionSummary & { variance: number } {
-  return tx((db) => {
-    const summary = cashSessionSummary(params.sessionId, db);
+}): Promise<CashSessionSummary & { variance: number }> {
+  return tx(async (db) => {
+    const summary = await cashSessionSummary(params.sessionId, db);
     if (summary.session.closed_at) {
       throw errors.conflict("CAISSE_DEJA_FERMEE", "Cette session est déjà fermée.");
     }
@@ -156,15 +160,17 @@ export function closeCashSession(params: {
     }
 
     const variance = params.countedAmount - summary.attendu;
-    db.prepare(
-      `UPDATE cash_sessions SET closed_at = ?, counted_amount = ?, variance = ?
+    await db
+      .prepare(
+        `UPDATE cash_sessions SET closed_at = ?, counted_amount = ?, variance = ?
         WHERE id = ? AND closed_at IS NULL`,
-    ).run(nowIso(), params.countedAmount, variance, params.sessionId);
+      )
+      .run(nowIso(), params.countedAmount, variance, params.sessionId);
 
-    const agency = getAgency(summary.session.agency_id, db);
-    const policy = companyPolicy(getCompany(agency.company_id, db));
+    const agency = await getAgency(summary.session.agency_id, db);
+    const policy = companyPolicy(await getCompany(agency.company_id, db));
 
-    audit(
+    await audit(
       {
         userId: params.actor.userId,
         role: params.actor.role,
@@ -182,7 +188,7 @@ export function closeCashSession(params: {
 
     // §2.11 : « écart de caisse au-delà du seuil » déclenche une alerte.
     if (Math.abs(variance) > policy.cashVarianceAlertThreshold) {
-      raiseAlert(
+      await raiseAlert(
         {
           kind: "ECART_CAISSE",
           severity: "MAJEURE",
@@ -198,21 +204,21 @@ export function closeCashSession(params: {
       );
     }
 
-    return { ...cashSessionSummary(params.sessionId, db), variance };
+    return { ...(await cashSessionSummary(params.sessionId, db)), variance };
   });
 }
 
-export function openSessionFor(
+export async function openSessionFor(
   userId: string,
   agencyId: string,
-  db: Database = getDb(),
-): CashSessionRow | null {
+  db: DbHandle = getDb(),
+): Promise<CashSessionRow | null> {
   return (
-    (db
-      .prepare(
+    (await db
+      .prepare<CashSessionRow>(
         `SELECT * FROM cash_sessions WHERE user_id = ? AND agency_id = ? AND closed_at IS NULL`,
       )
-      .get(userId, agencyId) as CashSessionRow | undefined) ?? null
+      .get(userId, agencyId)) ?? null
   );
 }
 
@@ -220,35 +226,37 @@ export function openSessionFor(
  * Remboursement en espèces au guichet — mouvement de caisse négatif entrant
  * dans le calcul d'écart. Réservé au gérant (§2.4 contraintes anti-fraude).
  */
-export function recordCashRefund(params: {
+export async function recordCashRefund(params: {
   sessionId: string;
   bookingId: string | null;
   amount: number;
   currency: Currency;
   label: string;
   actor: { userId: string; role: string };
-}): void {
-  tx((db) => {
-    const session = db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(params.sessionId) as
-      | CashSessionRow
-      | undefined;
+}): Promise<void> {
+  await tx(async (db) => {
+    const session = await db
+      .prepare<CashSessionRow>(`SELECT * FROM cash_sessions WHERE id = ?`)
+      .get(params.sessionId);
     if (!session) throw errors.notFound("Session de caisse");
     if (session.closed_at) throw errors.conflict("CAISSE_FERMEE", "Session déjà fermée.");
 
-    db.prepare(
-      `INSERT INTO cash_movements
+    await db
+      .prepare(
+        `INSERT INTO cash_movements
          (id, cash_session_id, booking_id, type, amount, currency, label, created_at)
        VALUES (?, ?, ?, 'REMBOURSEMENT', ?, ?, ?, ?)`,
-    ).run(
-      newId("cmv"),
-      params.sessionId,
-      params.bookingId,
-      params.amount,
-      params.currency,
-      params.label,
-      nowIso(),
-    );
-    audit(
+      )
+      .run(
+        newId("cmv"),
+        params.sessionId,
+        params.bookingId,
+        params.amount,
+        params.currency,
+        params.label,
+        nowIso(),
+      );
+    await audit(
       {
         userId: params.actor.userId,
         role: params.actor.role,

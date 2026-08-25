@@ -18,18 +18,18 @@ export default async function FicheTrajet(props: PageProps<"/backoffice/trajet/[
 
   let trip;
   try {
-    trip = tripDetail(tripId);
+    trip = await tripDetail(tripId);
   } catch {
     notFound();
   }
   if (session!.activeRole !== "SUPER_ADMIN" && trip.company_id !== session!.companyId) notFound();
 
   const db = getDb();
-  const seatMap = getSeatMap(trip.bus.seat_map_id, db);
-  const dispo = seatAvailability(tripId, db);
-  const seats = listTripSeats(tripId, db);
+  const seatMap = await getSeatMap(trip.bus.seat_map_id, db);
+  const dispo = await seatAvailability(tripId, db);
+  const seats = await listTripSeats(tripId, db);
 
-  const billets = db
+  const billets = (await db
     .prepare(
       `SELECT t.id, t.ticket_code, t.status, t.passenger_name, t.passenger_phone,
               t.price_amount, t.price_currency, t.sequence_number, t.booking_id,
@@ -40,7 +40,7 @@ export default async function FicheTrajet(props: PageProps<"/backoffice/trajet/[
          LEFT JOIN users u ON u.id = b.sold_by_user_id
         WHERE t.trip_id = ? ORDER BY s.seat_number`,
     )
-    .all(tripId) as Array<{
+    .all(tripId)) as Array<{
     id: string;
     ticket_code: string;
     status: TicketStatus;

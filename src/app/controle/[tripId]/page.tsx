@@ -18,13 +18,13 @@ export default async function PageControle(props: PageProps<"/controle/[tripId]"
 
   let trip;
   try {
-    trip = tripDetail(tripId);
+    trip = await tripDetail(tripId);
   } catch {
     notFound();
   }
   if (session.activeRole !== "SUPER_ADMIN" && trip.company_id !== session.companyId) notFound();
 
-  const manifeste = buildManifest(tripId);
+  const manifeste = await buildManifest(tripId);
 
   return (
     <div className="space-y-4">

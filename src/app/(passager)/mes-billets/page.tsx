@@ -33,8 +33,8 @@ export default async function MesBillets() {
     );
   }
 
-  const billets = getDb()
-    .prepare(
+  const billets = await getDb()
+    .prepare<LigneBillet>(
       `SELECT t.id, t.ticket_code, t.status, t.price_amount, t.price_currency,
               s.seat_number AS siege, r.origin_city, r.destination_city,
               tr.departure_datetime, c.name AS compagnie
@@ -46,9 +46,9 @@ export default async function MesBillets() {
         WHERE t.passenger_phone = ?
         ORDER BY tr.departure_datetime DESC`,
     )
-    .all(session.phone) as LigneBillet[];
+    .all(session.phone);
 
-  const avoirs = activeCredits(session.phone);
+  const avoirs = await activeCredits(session.phone);
 
   return (
     <div className="space-y-5">

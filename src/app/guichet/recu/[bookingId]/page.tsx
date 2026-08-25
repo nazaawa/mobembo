@@ -51,28 +51,28 @@ export default async function RecuGuichet(props: PageProps<"/guichet/recu/[booki
   const db = getDb();
   let booking;
   try {
-    booking = getBooking(bookingId, db);
+    booking = await getBooking(bookingId, db);
   } catch {
     notFound();
   }
 
-  const trip = tripDetail(booking.trip_id, db);
+  const trip = await tripDetail(booking.trip_id, db);
   // Un reçu porte un QR d'embarquement : il ne sort pas de la compagnie.
   if (session.activeRole !== "SUPER_ADMIN" && trip.company_id !== session.companyId) {
     notFound();
   }
 
-  const company = getCompany(trip.company_id, db);
+  const company = await getCompany(trip.company_id, db);
   const policy = companyPolicy(company);
-  const agency = booking.agency_id ? getAgency(booking.agency_id, db) : trip.agency;
+  const agency = booking.agency_id ? await getAgency(booking.agency_id, db) : trip.agency;
 
-  const tous = db
-    .prepare(
+  const tous = await db
+    .prepare<LigneBillet>(
       `SELECT t.*, s.seat_number FROM tickets t
          JOIN trip_seats s ON s.id = t.trip_seat_id
         WHERE t.booking_id = ? ORDER BY s.seat_number`,
     )
-    .all(bookingId) as LigneBillet[];
+    .all(bookingId);
 
   // `?billet=` permet de réimprimer un seul billet d'une vente de groupe,
   // quand un passager perd le sien.
@@ -82,17 +82,15 @@ export default async function RecuGuichet(props: PageProps<"/guichet/recu/[booki
   if (billets.length === 0) notFound();
 
   const vendeur = booking.sold_by_user_id
-    ? (db.prepare(`SELECT name FROM users WHERE id = ?`).get(booking.sold_by_user_id) as
-        | { name: string }
-        | undefined)
+    ? await db.prepare<{ name: string }>(`SELECT name FROM users WHERE id = ?`).get(booking.sold_by_user_id)
     : undefined;
 
-  const paiement = db
-    .prepare(
+  const paiement = await db
+    .prepare<{ provider: string }>(
       `SELECT provider FROM payments WHERE booking_id = ? AND status = 'CONFIRME'
         ORDER BY created_at LIMIT 1`,
     )
-    .get(bookingId) as { provider: string } | undefined;
+    .get(bookingId);
 
   return (
     <div className="feuille-impression space-y-4">

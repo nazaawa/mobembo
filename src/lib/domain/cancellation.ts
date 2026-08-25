@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { DbHandle } from "@/lib/db";
 import { getDb, tx } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
 import { nowIso, plusDays, hoursUntil, formatDateTime } from "@/lib/core/time";
@@ -46,10 +46,13 @@ export interface GridOption {
  * Grille calculée pour un billet donné à l'instant présent. Le passager voit
  * ce qu'il perd en attendant — c'est tout l'objet du gradient.
  */
-export function renunciationGrid(ticketId: string, db: Database = getDb()): GridOption[] {
-  const ticket = getTicket(ticketId, db);
-  const trip = getTrip(ticket.trip_id, db);
-  const company = getCompany(trip.company_id, db);
+export async function renunciationGrid(
+  ticketId: string,
+  db: DbHandle = getDb(),
+): Promise<GridOption[]> {
+  const ticket = await getTicket(ticketId, db);
+  const trip = await getTrip(ticket.trip_id, db);
+  const company = await getCompany(trip.company_id, db);
   const policy = companyPolicy(company);
   const remaining = trip.departed_at ? -1 : hoursUntil(trip.departure_datetime);
   const closed = !["EMIS", "EN_REVENTE"].includes(ticket.status);
@@ -129,8 +132,8 @@ export function renunciationGrid(ticketId: string, db: Database = getDb()): Grid
  * aucune trésorerie à la compagnie, aucun frais de décaissement à la
  * plateforme, et conserve le client. »
  */
-export function issueCredit(
-  db: Database,
+export async function issueCredit(
+  db: DbHandle,
   params: {
     phone: string;
     companyId: string;
@@ -139,41 +142,43 @@ export function issueCredit(
     originTicketId: string | null;
     validityDays: number;
   },
-): CreditRow {
+): Promise<CreditRow> {
   const id = newId("crd");
-  db.prepare(
-    `INSERT INTO credits
+  await db
+    .prepare(
+      `INSERT INTO credits
        (id, passenger_phone, company_id, amount, currency, origin_ticket_id,
         issued_at, expires_at, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIF', ?)`,
-  ).run(
-    id,
-    params.phone,
-    params.companyId,
-    params.amount,
-    params.currency,
-    params.originTicketId,
-    nowIso(),
-    plusDays(params.validityDays),
-    nowIso(),
-  );
-  return db.prepare(`SELECT * FROM credits WHERE id = ?`).get(id) as CreditRow;
+    )
+    .run(
+      id,
+      params.phone,
+      params.companyId,
+      params.amount,
+      params.currency,
+      params.originTicketId,
+      nowIso(),
+      plusDays(params.validityDays),
+      nowIso(),
+    );
+  return (await db.prepare<CreditRow>(`SELECT * FROM credits WHERE id = ?`).get(id)) as CreditRow;
 }
 
-export function activeCredits(
+export async function activeCredits(
   phone: string,
   companyId?: string,
-  db: Database = getDb(),
-): CreditRow[] {
-  db.prepare(`UPDATE credits SET status = 'EXPIRE' WHERE status = 'ACTIF' AND expires_at <= ?`).run(
-    nowIso(),
-  );
+  db: DbHandle = getDb(),
+): Promise<CreditRow[]> {
+  await db
+    .prepare(`UPDATE credits SET status = 'EXPIRE' WHERE status = 'ACTIF' AND expires_at <= ?`)
+    .run(nowIso());
   const sql = companyId
     ? `SELECT * FROM credits WHERE passenger_phone = ? AND status = 'ACTIF' AND company_id = ? ORDER BY expires_at`
     : `SELECT * FROM credits WHERE passenger_phone = ? AND status = 'ACTIF' ORDER BY expires_at`;
-  return (companyId
-    ? db.prepare(sql).all(phone, companyId)
-    : db.prepare(sql).all(phone)) as CreditRow[];
+  return companyId
+    ? db.prepare<CreditRow>(sql).all(phone, companyId)
+    : db.prepare<CreditRow>(sql).all(phone);
 }
 
 /**
@@ -181,39 +186,40 @@ export function activeCredits(
  * tardive (50 %). Le billet est clos, le siège retourne au stock — à la
  * différence de la revente, où il reste VENDU.
  */
-export function renounceForCredit(params: {
+export async function renounceForCredit(params: {
   ticketId: string;
   actorPhone: string;
   action: "REPORT" | "ANNULATION_TARDIVE";
-}): { ticket: TicketRow; credit: CreditRow } {
-  const outcome = tx((db) => {
-    const ticket = getTicket(params.ticketId, db);
+}): Promise<{ ticket: TicketRow; credit: CreditRow }> {
+  const outcome = await tx(async (db) => {
+    const ticket = await getTicket(params.ticketId, db);
     if (ticket.passenger_phone !== params.actorPhone) {
       throw errors.forbidden("Ce billet n'est pas au nom de ce numéro.");
     }
-    const grid = renunciationGrid(params.ticketId, db);
+    const grid = await renunciationGrid(params.ticketId, db);
     const option = grid.find((o) => o.action === params.action);
     if (!option?.disponible) {
       throw errors.conflict("OPTION_INDISPONIBLE", option?.raison ?? "Option indisponible.");
     }
 
-    const trip = getTrip(ticket.trip_id, db);
-    const company = getCompany(trip.company_id, db);
+    const trip = await getTrip(ticket.trip_id, db);
+    const company = await getCompany(trip.company_id, db);
     const policy = companyPolicy(company);
 
-    db.prepare(
-      `UPDATE resale_listings SET status = 'RETIREE' WHERE ticket_id = ? AND status = 'ACTIVE'`,
-    ).run(ticket.id);
-    db.prepare(`UPDATE tickets SET status = 'ANNULE', updated_at = ? WHERE id = ?`).run(
-      nowIso(),
-      ticket.id,
-    );
-    db.prepare(
-      `UPDATE trip_seats SET status = 'DISPONIBLE', locked_until = NULL,
+    await db
+      .prepare(`UPDATE resale_listings SET status = 'RETIREE' WHERE ticket_id = ? AND status = 'ACTIVE'`)
+      .run(ticket.id);
+    await db
+      .prepare(`UPDATE tickets SET status = 'ANNULE', updated_at = ? WHERE id = ?`)
+      .run(nowIso(), ticket.id);
+    await db
+      .prepare(
+        `UPDATE trip_seats SET status = 'DISPONIBLE', locked_until = NULL,
               lock_session_id = NULL, lock_phone = NULL WHERE id = ?`,
-    ).run(ticket.trip_seat_id);
+      )
+      .run(ticket.trip_seat_id);
 
-    const credit = issueCredit(db, {
+    const credit = await issueCredit(db, {
       phone: ticket.passenger_phone,
       companyId: trip.company_id,
       amount: option.montant,
@@ -223,7 +229,7 @@ export function renounceForCredit(params: {
         params.action === "REPORT" ? policy.postponeCreditDays : policy.lateCancelCreditDays,
     });
 
-    queueSms(
+    await queueSms(
       db,
       ticket.passenger_phone,
       `MOBEMBO : billet ${ticket.ticket_code} (${formatDateTime(trip.departure_datetime)}) annule. ` +
@@ -232,7 +238,7 @@ export function renounceForCredit(params: {
       "AVOIR",
     );
 
-    audit(
+    await audit(
       {
         companyId: trip.company_id,
         action: params.action === "REPORT" ? "REPORT_DATE" : "ANNULATION_TARDIVE",
@@ -244,7 +250,7 @@ export function renounceForCredit(params: {
       db,
     );
 
-    return { ticket: getTicket(ticket.id, db), credit };
+    return { ticket: await getTicket(ticket.id, db), credit };
   });
   void flushSmsQueue();
   return outcome;
@@ -311,19 +317,19 @@ export const LIABILITY_GRID: LiabilityRule[] = [
 ];
 
 /** Applique la grille de responsabilité à un billet : remboursement + avoir. */
-export function applyLiability(params: {
+export async function applyLiability(params: {
   ticketId: string;
   situation: LiabilitySituation;
   actor: { userId: string; role: string; companyId?: string | null };
   note?: string;
-}): { remboursement: number; avoir: number; impute: string } {
+}): Promise<{ remboursement: number; avoir: number; impute: string }> {
   const rule = LIABILITY_GRID.find((r) => r.situation === params.situation);
   if (!rule) throw errors.invalid("Situation inconnue dans la grille de responsabilité.");
 
-  const outcome = tx((db) => {
-    const ticket = getTicket(params.ticketId, db);
-    const trip = getTrip(ticket.trip_id, db);
-    const company = getCompany(trip.company_id, db);
+  const outcome = await tx(async (db) => {
+    const ticket = await getTicket(params.ticketId, db);
+    const trip = await getTrip(ticket.trip_id, db);
+    const company = await getCompany(trip.company_id, db);
     const policy: CompanyPolicy = companyPolicy(company);
     const currency = ticket.price_currency as Currency;
 
@@ -331,33 +337,35 @@ export function applyLiability(params: {
     const creditAmount = Math.round(ticket.price_amount * rule.avoirRate);
 
     if (refundAmount > 0) {
-      const originalPayment = db
-        .prepare(
+      const originalPayment = await db
+        .prepare<{ provider: string; payer_phone: string }>(
           `SELECT provider, payer_phone FROM payments
             WHERE booking_id = ? AND status = 'CONFIRME' ORDER BY created_at LIMIT 1`,
         )
-        .get(ticket.booking_id) as { provider: string; payer_phone: string } | undefined;
+        .get(ticket.booking_id);
 
-      db.prepare(
-        `INSERT INTO refunds
+      await db
+        .prepare(
+          `INSERT INTO refunds
            (id, ticket_id, booking_id, amount, currency, target_phone, provider, reason, liable, status, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EN_FILE', ?)`,
-      ).run(
-        newId("rfd"),
-        ticket.id,
-        ticket.booking_id,
-        refundAmount,
-        currency,
-        originalPayment?.payer_phone ?? ticket.passenger_phone,
-        originalPayment?.provider ?? "MPESA",
-        `${rule.label}${params.note ? ` — ${params.note}` : ""}`,
-        rule.impute,
-        nowIso(),
-      );
+        )
+        .run(
+          newId("rfd"),
+          ticket.id,
+          ticket.booking_id,
+          refundAmount,
+          currency,
+          originalPayment?.payer_phone ?? ticket.passenger_phone,
+          originalPayment?.provider ?? "MPESA",
+          `${rule.label}${params.note ? ` — ${params.note}` : ""}`,
+          rule.impute,
+          nowIso(),
+        );
     }
 
     if (creditAmount > 0) {
-      issueCredit(db, {
+      await issueCredit(db, {
         phone: ticket.passenger_phone,
         companyId: trip.company_id,
         amount: creditAmount,
@@ -368,13 +376,12 @@ export function applyLiability(params: {
     }
 
     if (ticket.status !== "EMBARQUE") {
-      db.prepare(`UPDATE tickets SET status = 'ANNULE', updated_at = ? WHERE id = ?`).run(
-        nowIso(),
-        ticket.id,
-      );
+      await db
+        .prepare(`UPDATE tickets SET status = 'ANNULE', updated_at = ? WHERE id = ?`)
+        .run(nowIso(), ticket.id);
     }
 
-    queueSms(
+    await queueSms(
       db,
       ticket.passenger_phone,
       `MOBEMBO : ${rule.label}. Remboursement de ${formatMoney(refundAmount, currency)} sous 48 h` +
@@ -382,7 +389,7 @@ export function applyLiability(params: {
       "REMBOURSEMENT",
     );
 
-    audit(
+    await audit(
       {
         userId: params.actor.userId,
         role: params.actor.role,

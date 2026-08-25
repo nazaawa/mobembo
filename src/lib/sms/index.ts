@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { DbHandle } from "@/lib/db";
 import { getDb } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
 import { nowIso } from "@/lib/core/time";
@@ -45,7 +45,7 @@ export async function sendSms(
   phone: string,
   body: string,
   kind: SmsKind,
-  db: Database = getDb(),
+  db: DbHandle = getDb(),
 ): Promise<void> {
   let provider = primary;
   let failover = 0;
@@ -55,43 +55,50 @@ export async function sendSms(
     failover = 1;
     result = await provider.send(phone, body).catch(() => ({ ok: false }));
   }
-  db.prepare(
-    `INSERT INTO sms_outbox (id, phone, body, kind, provider, status, failover, created_at)
+  await db
+    .prepare(
+      `INSERT INTO sms_outbox (id, phone, body, kind, provider, status, failover, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    newId("sms"),
-    phone,
-    body,
-    kind,
-    provider.id,
-    result.ok ? "ENVOYE" : "ECHOUE",
-    failover,
-    nowIso(),
-  );
+    )
+    .run(
+      newId("sms"),
+      phone,
+      body,
+      kind,
+      provider.id,
+      result.ok ? "ENVOYE" : "ECHOUE",
+      failover,
+      nowIso(),
+    );
 }
 
 /**
- * Variante synchrone utilisée à l'intérieur des transactions : le SMS est
- * enregistré dans la même transaction que le billet, puis dépilé. Un billet
- * émis sans trace d'envoi serait un billet dont le passager n'a rien reçu.
+ * Variante utilisée à l'intérieur des transactions : le SMS est enregistré
+ * dans la même transaction que le billet, puis dépilé par `flushSmsQueue`. Un
+ * billet émis sans trace d'envoi serait un billet dont le passager n'a rien
+ * reçu.
  */
-export function queueSms(
-  db: Database,
+export async function queueSms(
+  db: DbHandle,
   phone: string,
   body: string,
   kind: SmsKind,
-): void {
-  db.prepare(
-    `INSERT INTO sms_outbox (id, phone, body, kind, provider, status, failover, created_at)
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO sms_outbox (id, phone, body, kind, provider, status, failover, created_at)
      VALUES (?, ?, ?, ?, 'FILE', 'EN_FILE', 0, ?)`,
-  ).run(newId("sms"), phone, body, kind, nowIso());
+    )
+    .run(newId("sms"), phone, body, kind, nowIso());
 }
 
 /** Dépile les SMS mis en file par les transactions métier. */
-export async function flushSmsQueue(db: Database = getDb()): Promise<number> {
-  const pending = db
-    .prepare(`SELECT * FROM sms_outbox WHERE status = 'EN_FILE' ORDER BY created_at LIMIT 100`)
-    .all() as Array<{ id: string; phone: string; body: string }>;
+export async function flushSmsQueue(db: DbHandle = getDb()): Promise<number> {
+  const pending = await db
+    .prepare<{ id: string; phone: string; body: string }>(
+      `SELECT * FROM sms_outbox WHERE status = 'EN_FILE' ORDER BY created_at LIMIT 100`,
+    )
+    .all();
   for (const message of pending) {
     let provider = primary;
     let failover = 0;
@@ -101,12 +108,9 @@ export async function flushSmsQueue(db: Database = getDb()): Promise<number> {
       failover = 1;
       result = await provider.send(message.phone, message.body).catch(() => ({ ok: false }));
     }
-    db.prepare(`UPDATE sms_outbox SET status = ?, provider = ?, failover = ? WHERE id = ?`).run(
-      result.ok ? "ENVOYE" : "ECHOUE",
-      provider.id,
-      failover,
-      message.id,
-    );
+    await db
+      .prepare(`UPDATE sms_outbox SET status = ?, provider = ?, failover = ? WHERE id = ?`)
+      .run(result.ok ? "ENVOYE" : "ECHOUE", provider.id, failover, message.id);
   }
   return pending.length;
 }

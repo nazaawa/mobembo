@@ -60,7 +60,7 @@ npm run build      # build de production
 npm run start      # serveur de production
 npm run seed       # (ré)initialise le jeu de démonstration
 npm run schema:export  # régénère src/lib/db/schema.sql depuis le module canonique
-npm test           # cahier de tests §5.2 — 40 cas (base en mémoire)
+npm test           # cahier de tests §5.2 — 40 cas (base MySQL de test dédiée)
 npm run typecheck  # TypeScript strict
 npm run lint       # ESLint + React Compiler
 ```
@@ -71,7 +71,7 @@ npm run lint       # ESLint + React Compiler
 src/
   lib/
     core/       ids, horodatage serveur, monnaie entière, erreurs métier
-    db/         schema.ts (§3.5) + connexion SQLite + transactions immédiates
+    db/         schema.ts (§3.5) + pool MySQL (mysql2) + transactions verrouillées
     domain/     règles métier — le cœur, sans dépendance à Next.js
     auth/       sessions signées, scrypt, OTP, rôles
     payments/   abstraction PaymentProvider + opérateur simulé
@@ -94,11 +94,16 @@ sans HTTP, et resteraient valables derrière une autre façade.
 
 ### Choix techniques
 
-**SQLite.** La §5.2 exige qu'« un seul billet soit émis » quand deux
-guichetiers cliquent le même siège au même instant. Le verrou d'écriture global
-de SQLite, associé à `BEGIN IMMEDIATE`, donne cette garantie sans code
-distribué. Le passage à PostgreSQL ne touche que `src/lib/db/index.ts` : tout le
-domaine s'exprime en SQL standard et en transactions.
+**MySQL.** La §5.2 exige qu'« un seul billet soit émis » quand deux guichetiers
+cliquent le même siège au même instant. Chaque opération qui touche à l'état
+d'un siège (verrouillage, vente, revente) s'exécute dans une transaction qui
+verrouille la ligne concernée par `SELECT ... FOR UPDATE` avant de la modifier,
+puis vérifie le nombre de lignes réellement affectées par l'écriture : un
+second guichetier qui vise le même siège attend la première transaction, relit
+un état à jour, et échoue proprement plutôt que d'écraser une vente en cours.
+`src/lib/db/index.ts` expose une couche de compatibilité (`prepare(sql).get/
+all/run(...)`) au-dessus du pool `mysql2` : le reste du domaine s'exprime en
+SQL standard, sans jamais connaître le pilote.
 
 **Montants entiers.** Les prix, écarts de caisse et commissions circulent en
 centimes. Aucun flottant ne touche une recette : §5.1 exige un écart de caisse
@@ -128,23 +133,33 @@ bloquerait silencieusement des sièges pendant des jours.
 
 | Variable                   | Défaut                       | Rôle                                   |
 | -------------------------- | ---------------------------- | -------------------------------------- |
-| `MOBEMBO_DB_PATH`          | `./data/mobembo.db`          | base SQLite (`:memory:` pour les tests) |
+| `MOBEMBO_DATABASE_URL`     | absent (requis)              | connexion MySQL (`mysql://utilisateur:motdepasse@hote:port/base`) |
+| `MOBEMBO_DB_POOL_SIZE`     | `10`                         | taille du pool de connexions           |
 | `MOBEMBO_SESSION_SECRET`   | valeur de développement      | signature des cookies de session       |
-| `MOBEMBO_WEBHOOK_SECRET`   | valeur de développement      | vérification des webhooks opérateurs   |
+| `MOBEMBO_WEBHOOK_SECRET`   | valeur de développement      | vérification des webhooks opérateurs simulés |
+| `MOBEMBO_PAYMENT_MODE`     | absent (simulé)               | `live` pour brancher la passerelle IdoloPay |
+| `IDOLOPAY_BASE_URL`        | `https://pay.idolotech.com`  | passerelle mobile money réelle         |
+| `IDOLOPAY_API_KEY`         | absent                       | clé du compte marchand IdoloPay        |
+| `IDOLOPAY_WEBHOOK_SECRET`  | absent                       | vérification du webhook `/api/webhooks/idolopay` |
 
-**En production, les deux secrets doivent être définis.** Les valeurs par défaut
-sont là pour que `npm run dev` fonctionne sans configuration, pas pour être
-déployées.
+**`MOBEMBO_DATABASE_URL` et les deux secrets sont requis en production.** Le
+paramètre `ssl-mode=REQUIRED` dans l'URL active TLS, nécessaire pour la plupart
+des clusters MySQL managés (ex. DigitalOcean). Tant que `MOBEMBO_PAYMENT_MODE`
+n'est pas `live` ou que `IDOLOPAY_API_KEY` est vide, `MPESA`/`ORANGE_MONEY`/
+`AIRTEL_MONEY` restent sur l'opérateur simulé : les scénarios de recette §5.2
+continuent de fonctionner sans clé.
 
 ## Ce qui reste à faire avant la production
 
 Le cahier des charges les identifie explicitement (§5.4) ; ils ne relèvent pas
 du code :
 
-- **Intégration des opérateurs réels.** `SimulatedProvider` implémente
-  l'interface `PaymentProvider` ; brancher FlexPay, MaxiCash ou Flutterwave
-  consiste à écrire une seconde classe et à l'enregistrer dans
-  `src/lib/payments/registry.ts`. Rien d'autre ne change.
+- **Compte marchand IdoloPay réel.** `IdoloPayProvider` (`src/lib/payments/idolopay.ts`)
+  implémente `PaymentProvider` et remplace l'opérateur simulé dès que
+  `MOBEMBO_PAYMENT_MODE=live` et `IDOLOPAY_API_KEY` sont renseignés — voir
+  Configuration ci-dessus. Il reste à obtenir un compte marchand dédié à
+  Mobembo (pas un compte partagé avec une autre plateforme) et à déclarer
+  `/api/webhooks/idolopay` comme `webhookUrl` de ce compte.
 - **Passerelle SMS réelle.** Même principe, via `configureSmsProviders()`.
 - **Localisation légale des données financières** (ARPTC, Banque Centrale).
 - **Statut réglementaire de l'encaissement pour compte de tiers.**

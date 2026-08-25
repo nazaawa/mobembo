@@ -12,9 +12,10 @@ export const POST = authedWith<{ tripId: string }>(
   ["GERANT_AGENCE", "ADMIN_COMPAGNIE", "SUPER_ADMIN"],
   async ({ request, params, session, ip, device }) => {
     const { from, to, count } = await body<{ from: Channel; to: Channel; count: number }>(request);
-    assertCompanyScope(session, getTrip(params.tripId).company_id);
+    const trip = await getTrip(params.tripId);
+    assertCompanyScope(session, trip.company_id);
 
-    const result = rebalanceChannel({
+    const result = await rebalanceChannel({
       tripId: params.tripId,
       from,
       to,
@@ -23,6 +24,6 @@ export const POST = authedWith<{ tripId: string }>(
       ip,
       device,
     });
-    return { deplaces: result.moved, disponibilite: seatAvailability(params.tripId) };
+    return { deplaces: result.moved, disponibilite: await seatAvailability(params.tripId) };
   },
 );

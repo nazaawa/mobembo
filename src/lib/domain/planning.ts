@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { DbHandle } from "@/lib/db";
 import { getDb, tx } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
 import { dayBounds, nowIso } from "@/lib/core/time";
@@ -11,39 +11,41 @@ import { getBus, getSeatMap, type RouteRow, type SeatMapRow, type TripRow } from
 import type { BusCategory, Channel, DepartureMode, SeatMapLayout } from "./types";
 
 /** §2.1 Plan de sièges éditable graphiquement, jamais codé en dur. */
-export function createSeatMap(params: {
+export async function createSeatMap(params: {
   companyId: string | null;
   name: string;
   rows: number;
   layout: SeatMapLayout;
   disabledSeats: string[];
   actor?: { userId: string; role: string };
-}): SeatMapRow {
+}): Promise<SeatMapRow> {
   if (params.rows < 1 || params.rows > 30) {
     throw errors.invalid("Le nombre de rangées doit être compris entre 1 et 30.");
   }
   if (params.layout.columns.filter((c) => c !== "aisle").length === 0) {
     throw errors.invalid("Le plan doit comporter au moins une colonne de sièges.");
   }
-  return tx((db) => {
+  return tx(async (db) => {
     const id = newId("smp");
     const count = seatCountFor(params.rows, params.layout, params.disabledSeats);
-    db.prepare(
-      `INSERT INTO seat_maps
-         (id, company_id, name, rows, layout_json, disabled_seats, seat_count, created_at)
+    await db
+      .prepare(
+        `INSERT INTO seat_maps
+         (id, company_id, name, row_count, layout_json, disabled_seats, seat_count, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      id,
-      params.companyId,
-      params.name,
-      params.rows,
-      JSON.stringify(params.layout),
-      JSON.stringify(params.disabledSeats),
-      count,
-      nowIso(),
-    );
+      )
+      .run(
+        id,
+        params.companyId,
+        params.name,
+        params.rows,
+        JSON.stringify(params.layout),
+        JSON.stringify(params.disabledSeats),
+        count,
+        nowIso(),
+      );
     if (params.actor) {
-      audit(
+      await audit(
         {
           userId: params.actor.userId,
           role: params.actor.role,
@@ -56,7 +58,9 @@ export function createSeatMap(params: {
         db,
       );
     }
-    return db.prepare(`SELECT * FROM seat_maps WHERE id = ?`).get(id) as SeatMapRow;
+    return (await db
+      .prepare<SeatMapRow>(`SELECT *, row_count AS \`rows\` FROM seat_maps WHERE id = ?`)
+      .get(id)) as SeatMapRow;
   });
 }
 
@@ -65,41 +69,43 @@ export function createSeatMap(params: {
  * de sièges sous les pieds des billets émis. Une nouvelle version est créée à
  * la place.
  */
-export function updateSeatMap(params: {
+export async function updateSeatMap(params: {
   seatMapId: string;
   name: string;
   rows: number;
   layout: SeatMapLayout;
   disabledSeats: string[];
   actor: { userId: string; role: string };
-}): SeatMapRow {
-  return tx((db) => {
-    const existing = getSeatMap(params.seatMapId, db);
-    const inUse = db
-      .prepare(
+}): Promise<SeatMapRow> {
+  return tx(async (db) => {
+    const existing = await getSeatMap(params.seatMapId, db);
+    const inUse = await db
+      .prepare<{ n: number }>(
         `SELECT COUNT(*) AS n FROM trips t JOIN buses b ON b.id = t.bus_id
           WHERE b.seat_map_id = ? AND t.status IN ('PLANIFIE','EN_VENTE')`,
       )
-      .get(params.seatMapId) as { n: number };
-    if (inUse.n > 0) {
+      .get(params.seatMapId);
+    if ((inUse?.n ?? 0) > 0) {
       throw errors.conflict(
         "PLAN_EN_USAGE",
-        `Ce plan sert à ${inUse.n} trajet(s) en vente. Créez-en une nouvelle version.`,
+        `Ce plan sert à ${inUse?.n} trajet(s) en vente. Créez-en une nouvelle version.`,
       );
     }
     const count = seatCountFor(params.rows, params.layout, params.disabledSeats);
-    db.prepare(
-      `UPDATE seat_maps SET name = ?, rows = ?, layout_json = ?, disabled_seats = ?, seat_count = ?
+    await db
+      .prepare(
+        `UPDATE seat_maps SET name = ?, row_count = ?, layout_json = ?, disabled_seats = ?, seat_count = ?
         WHERE id = ?`,
-    ).run(
-      params.name,
-      params.rows,
-      JSON.stringify(params.layout),
-      JSON.stringify(params.disabledSeats),
-      count,
-      params.seatMapId,
-    );
-    audit(
+      )
+      .run(
+        params.name,
+        params.rows,
+        JSON.stringify(params.layout),
+        JSON.stringify(params.disabledSeats),
+        count,
+        params.seatMapId,
+      );
+    await audit(
       {
         userId: params.actor.userId,
         role: params.actor.role,
@@ -116,22 +122,24 @@ export function updateSeatMap(params: {
   });
 }
 
-export function createBus(params: {
+export async function createBus(params: {
   companyId: string;
   plateNumber: string;
   seatMapId: string;
   category: BusCategory;
   actor?: { userId: string; role: string };
-}): { id: string } {
-  return tx((db) => {
-    getSeatMap(params.seatMapId, db);
+}): Promise<{ id: string }> {
+  return tx(async (db) => {
+    await getSeatMap(params.seatMapId, db);
     const id = newId("bus");
-    db.prepare(
-      `INSERT INTO buses (id, company_id, plate_number, seat_map_id, category, status, created_at)
+    await db
+      .prepare(
+        `INSERT INTO buses (id, company_id, plate_number, seat_map_id, category, status, created_at)
        VALUES (?, ?, ?, ?, ?, 'ACTIF', ?)`,
-    ).run(id, params.companyId, params.plateNumber.toUpperCase(), params.seatMapId, params.category, nowIso());
+      )
+      .run(id, params.companyId, params.plateNumber.toUpperCase(), params.seatMapId, params.category, nowIso());
     if (params.actor) {
-      audit(
+      await audit(
         {
           userId: params.actor.userId,
           role: params.actor.role,
@@ -148,29 +156,31 @@ export function createBus(params: {
   });
 }
 
-export function createRoute(params: {
+export async function createRoute(params: {
   companyId: string;
   originCity: string;
   destinationCity: string;
   distanceKm?: number | null;
   durationEstMin?: number | null;
-}): RouteRow {
-  return tx((db) => {
+}): Promise<RouteRow> {
+  return tx(async (db) => {
     const id = newId("rte");
-    db.prepare(
-      `INSERT INTO routes
+    await db
+      .prepare(
+        `INSERT INTO routes
          (id, company_id, origin_city, destination_city, distance_km, duration_est_min, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      id,
-      params.companyId,
-      params.originCity,
-      params.destinationCity,
-      params.distanceKm ?? null,
-      params.durationEstMin ?? null,
-      nowIso(),
-    );
-    return db.prepare(`SELECT * FROM routes WHERE id = ?`).get(id) as RouteRow;
+      )
+      .run(
+        id,
+        params.companyId,
+        params.originCity,
+        params.destinationCity,
+        params.distanceKm ?? null,
+        params.durationEstMin ?? null,
+        nowIso(),
+      );
+    return (await db.prepare<RouteRow>(`SELECT * FROM routes WHERE id = ?`).get(id)) as RouteRow;
   });
 }
 
@@ -191,9 +201,9 @@ export interface CreateTripInput {
  * grille tarifaire. » Les sièges et l'allocation par canal sont matérialisés
  * dans la même transaction : un trajet ne peut pas exister sans son plan.
  */
-export function createTrip(input: CreateTripInput): TripRow {
-  return tx((db) => {
-    const bus = getBus(input.busId, db);
+export async function createTrip(input: CreateTripInput): Promise<TripRow> {
+  return tx(async (db) => {
+    const bus = await getBus(input.busId, db);
     if (bus.company_id !== input.companyId) {
       throw errors.forbidden("Ce bus appartient à une autre compagnie.");
     }
@@ -207,34 +217,42 @@ export function createTrip(input: CreateTripInput): TripRow {
       );
     }
 
-    // Un bus déjà engagé sur un autre départ à la même heure serait vendu deux fois.
-    const clash = db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM trips
-          WHERE bus_id = ? AND status NOT IN ('ANNULE','CLOTURE')
-            AND ABS(strftime('%s', departure_datetime) - strftime('%s', ?)) < 3600`,
+    // Un bus déjà engagé sur un autre départ à la même heure serait vendu deux
+    // fois. MySQL n'a pas l'équivalent de strftime() : les horodatages sont
+    // des chaînes ISO 8601, comparées ici en millisecondes côté JS plutôt que
+    // par une fonction de date SQL.
+    const candidates = await db
+      .prepare<{ departure_datetime: string }>(
+        `SELECT departure_datetime FROM trips
+          WHERE bus_id = ? AND status NOT IN ('ANNULE','CLOTURE')`,
       )
-      .get(input.busId, input.departureDatetime) as { n: number };
-    if (clash.n > 0) {
+      .all(input.busId);
+    const targetTime = new Date(input.departureDatetime).getTime();
+    const clash = candidates.some(
+      (c) => Math.abs(new Date(c.departure_datetime).getTime() - targetTime) < 3_600_000,
+    );
+    if (clash) {
       throw errors.conflict("BUS_DEJA_ENGAGE", "Ce bus a déjà un départ programmé à cette heure.");
     }
 
     const id = newId("trp");
-    db.prepare(
-      `INSERT INTO trips
+    await db
+      .prepare(
+        `INSERT INTO trips
          (id, company_id, route_id, bus_id, origin_agency_id, departure_datetime,
           departure_mode, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'EN_VENTE', ?)`,
-    ).run(
-      id,
-      input.companyId,
-      input.routeId,
-      input.busId,
-      input.originAgencyId,
-      input.departureDatetime,
-      input.departureMode,
-      nowIso(),
-    );
+      )
+      .run(
+        id,
+        input.companyId,
+        input.routeId,
+        input.busId,
+        input.originAgencyId,
+        input.departureDatetime,
+        input.departureMode,
+        nowIso(),
+      );
 
     const insertPrice = db.prepare(
       `INSERT INTO trip_prices (id, trip_id, category, price_usd, price_cdf) VALUES (?, ?, ?, ?, ?)`,
@@ -243,15 +261,15 @@ export function createTrip(input: CreateTripInput): TripRow {
       if (price.priceUsd <= 0 || price.priceCdf <= 0) {
         throw errors.invalid(`Tarif ${price.category} : les deux devises sont obligatoires (§3.2).`);
       }
-      insertPrice.run(newId("prc"), id, price.category, price.priceUsd, price.priceCdf);
+      await insertPrice.run(newId("prc"), id, price.category, price.priceUsd, price.priceCdf);
     }
-    assertOnlinePriceNotHigher(id, db);
+    await assertOnlinePriceNotHigher(id, db);
 
-    const seatMap = getSeatMap(bus.seat_map_id, db);
-    materialiseTripSeats(db, id, seatMap, input.quotas);
+    const seatMap = await getSeatMap(bus.seat_map_id, db);
+    await materialiseTripSeats(db, id, seatMap, input.quotas);
 
     if (input.actor) {
-      audit(
+      await audit(
         {
           userId: input.actor.userId,
           role: input.actor.role,
@@ -269,22 +287,24 @@ export function createTrip(input: CreateTripInput): TripRow {
       );
     }
 
-    return db.prepare(`SELECT * FROM trips WHERE id = ?`).get(id) as TripRow;
+    return (await db.prepare<TripRow>(`SELECT * FROM trips WHERE id = ?`).get(id)) as TripRow;
   });
 }
 
-export function cancelTrip(params: {
+export async function cancelTrip(params: {
   tripId: string;
   reason: string;
   actor: { userId: string; role: string; companyId?: string | null };
-}): { billetsImpactes: number } {
+}): Promise<{ billetsImpactes: number }> {
   if (!params.reason.trim()) throw errors.invalid("Le motif d'annulation est obligatoire.");
-  return tx((db) => {
-    const tickets = db
-      .prepare(`SELECT id FROM tickets WHERE trip_id = ? AND status IN ('EMIS','EN_REVENTE')`)
-      .all(params.tripId) as { id: string }[];
-    db.prepare(`UPDATE trips SET status = 'ANNULE' WHERE id = ?`).run(params.tripId);
-    audit(
+  return tx(async (db) => {
+    const tickets = await db
+      .prepare<{ id: string }>(
+        `SELECT id FROM tickets WHERE trip_id = ? AND status IN ('EMIS','EN_REVENTE')`,
+      )
+      .all(params.tripId);
+    await db.prepare(`UPDATE trips SET status = 'ANNULE' WHERE id = ?`).run(params.tripId);
+    await audit(
       {
         userId: params.actor.userId,
         role: params.actor.role,
@@ -318,17 +338,17 @@ export interface SearchResult {
   placesRemisesEnVente: number;
 }
 
-export function searchTrips(params: {
+export async function searchTrips(params: {
   origin: string;
   destination: string;
   day: string;
-  db?: Database;
-}): SearchResult[] {
+  db?: DbHandle;
+}): Promise<SearchResult[]> {
   const db = params.db ?? getDb();
   const { start, end } = dayBounds(params.day);
 
   return db
-    .prepare(
+    .prepare<SearchResult>(
       `SELECT t.id AS tripId, c.name AS compagnie, c.id AS companyId,
               r.origin_city AS origine, r.destination_city AS destination,
               t.departure_datetime AS depart, r.duration_est_min AS dureeEstimeeMin,
@@ -351,15 +371,15 @@ export function searchTrips(params: {
           AND c.status = 'ACTIVE'
         ORDER BY t.departure_datetime`,
     )
-    .all(params.origin, params.destination, start, end) as SearchResult[];
+    .all(params.origin, params.destination, start, end);
 }
 
-export function knownCities(db: Database = getDb()): string[] {
-  const rows = db
-    .prepare(
+export async function knownCities(db: DbHandle = getDb()): Promise<string[]> {
+  const rows = await db
+    .prepare<{ city: string }>(
       `SELECT origin_city AS city FROM routes
        UNION SELECT destination_city FROM routes ORDER BY city`,
     )
-    .all() as { city: string }[];
+    .all();
   return rows.map((r) => r.city);
 }

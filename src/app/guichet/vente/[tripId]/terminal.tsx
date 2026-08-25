@@ -262,7 +262,7 @@ export function TerminalVente({
         </div>
       </Card>
 
-      <div className="space-y-4">
+      <div className="space-y-4 lg:sticky lg:top-24">
         {!enLigne && (
           <div className="rounded-lg border border-attention/40 bg-attention-doux px-3 py-2.5 text-sm text-attention">
             <p className="font-semibold">Mode hors-ligne</p>

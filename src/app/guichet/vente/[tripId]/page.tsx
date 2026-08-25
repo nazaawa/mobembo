@@ -22,7 +22,7 @@ export default async function PageVente(props: PageProps<"/guichet/vente/[tripId
     return <Empty>Aucune agence rattachée à ce rôle.</Empty>;
   }
 
-  const caisse = openSessionFor(session.userId, session.agencyId);
+  const caisse = await openSessionFor(session.userId, session.agencyId);
   if (!caisse) {
     return (
       <Card title="Caisse fermée">
@@ -39,16 +39,16 @@ export default async function PageVente(props: PageProps<"/guichet/vente/[tripId
 
   let trip;
   try {
-    trip = tripDetail(tripId);
+    trip = await tripDetail(tripId);
   } catch {
     notFound();
   }
   if (trip.company_id !== session.companyId) notFound();
 
-  const seatMap = getSeatMap(trip.bus.seat_map_id);
+  const seatMap = await getSeatMap(trip.bus.seat_map_id);
   const layout = JSON.parse(seatMap.layout_json) as SeatMapLayout;
-  const seats = listTripSeats(tripId);
-  const dispo = seatAvailability(tripId);
+  const seats = await listTripSeats(tripId);
+  const dispo = await seatAvailability(tripId);
 
   const prix = trip.prices.find((p) => p.category === trip.bus.category) ?? trip.prices[0];
 
@@ -75,6 +75,18 @@ export default async function PageVente(props: PageProps<"/guichet/vente/[tripId
           </p>
         </div>
       </div>
+
+      <nav aria-label="Étapes de la vente" className="overflow-x-auto rounded-[12px] border border-bordure bg-surface px-4 py-3">
+        <ol className="flex min-w-[34rem] items-center text-xs font-semibold">
+          {["Départ", "Sièges", "Encaissement", "Reçu"].map((label, index) => (
+            <li key={label} className="flex flex-1 items-center last:flex-none">
+              <span className={`flex h-7 w-7 items-center justify-center rounded-full ${index === 0 ? "bg-succes text-white" : index === 1 ? "bg-accent text-white" : "border border-bordure text-texte-doux"}`}>{index === 0 ? "✓" : index + 1}</span>
+              <span className={`ml-2 ${index === 1 ? "text-navy" : "text-texte-doux"}`}>{label}</span>
+              {index < 3 && <span className={`mx-3 h-px flex-1 ${index === 0 ? "bg-succes" : "bg-bordure"}`} aria-hidden />}
+            </li>
+          ))}
+        </ol>
+      </nav>
 
       <TerminalVente
         tripId={tripId}

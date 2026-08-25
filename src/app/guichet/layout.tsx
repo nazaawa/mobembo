@@ -16,8 +16,8 @@ export default async function GuichetLayout({ children }: LayoutProps<"/guichet"
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="sans-impression border-b border-bordure bg-surface">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+      <header className="sans-impression sticky top-0 z-30 border-b border-bordure bg-surface/95 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
           <Link href="/guichet" className="flex min-h-11 items-center gap-2" aria-label="Mobembo Guichet">
             <MobemboLogo alt="" className="h-7 w-auto" />
             <span className="rounded bg-accent-doux px-1.5 py-0.5 text-[11px] font-medium text-accent">
@@ -31,17 +31,15 @@ export default async function GuichetLayout({ children }: LayoutProps<"/guichet"
               <span className="text-texte-doux">
                 {session.name} · {ROLE_LABELS[session.activeRole]}
               </span>
-              <form action="/api/auth/deconnexion" method="post">
-                <Link href="/guichet/connexion" className="text-xs text-accent hover:underline">
-                  Changer de rôle
-                </Link>
-              </form>
+              <Link href="/guichet/connexion" className="inline-flex min-h-11 items-center text-xs font-semibold text-accent hover:underline">
+                Changer de rôle
+              </Link>
             </div>
           )}
         </div>
       </header>
 
-      <main className="zone-impression mx-auto w-full max-w-6xl flex-1 px-4 py-5">
+      <main className="zone-impression mx-auto w-full max-w-7xl flex-1 px-4 py-6">
         {children}
       </main>
     </div>

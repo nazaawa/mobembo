@@ -9,7 +9,7 @@ import { DEFAULT_POLICY, type CompanyPolicy } from "@/lib/domain/types";
 /** GET — §2.9 grille paramétrable par compagnie, pré-remplie par défaut. */
 export const GET = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ session }) => {
   if (!session.companyId) throw errors.invalid("Compagnie non déterminée.");
-  const company = getCompany(session.companyId);
+  const company = await getCompany(session.companyId);
   return {
     compagnie: {
       id: company.id,
@@ -21,7 +21,7 @@ export const GET = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ session }
     },
     politique: companyPolicy(company),
     politiqueParDefaut: DEFAULT_POLICY,
-    abonnement: getDb()
+    abonnement: await getDb()
       .prepare(`SELECT * FROM subscriptions WHERE company_id = ? ORDER BY period_end DESC LIMIT 1`)
       .get(session.companyId),
   };
@@ -36,31 +36,33 @@ export const PUT = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request, 
     commission?: number;
   }>(request);
 
-  return tx((db) => {
-    const before = getCompany(session.companyId!, db);
+  return tx(async (db) => {
+    const before = await getCompany(session.companyId!, db);
     const policy = { ...companyPolicy(before), ...input.politique };
 
     if (input.commission !== undefined && (input.commission < 0 || input.commission > 0.2)) {
       throw errors.invalid("La commission doit rester entre 0 et 20 %.");
     }
 
-    db.prepare(
-      `UPDATE companies
+    await db
+      .prepare(
+        `UPDATE companies
           SET policy_json = ?,
               currency_rate_usd_cdf = COALESCE(?, currency_rate_usd_cdf),
               currency_rate_at = CASE WHEN ? IS NULL THEN currency_rate_at ELSE ? END,
               commission_rate = COALESCE(?, commission_rate)
         WHERE id = ?`,
-    ).run(
-      JSON.stringify(policy),
-      input.tauxUsdCdf ?? null,
-      input.tauxUsdCdf ?? null,
-      nowIso(),
-      input.commission ?? null,
-      session.companyId,
-    );
+      )
+      .run(
+        JSON.stringify(policy),
+        input.tauxUsdCdf ?? null,
+        input.tauxUsdCdf ?? null,
+        nowIso(),
+        input.commission ?? null,
+        session.companyId,
+      );
 
-    audit(
+    await audit(
       {
         userId: session.userId,
         role: session.activeRole,

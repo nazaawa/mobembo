@@ -9,15 +9,17 @@ import { detectSequenceGaps } from "@/lib/domain/tickets";
 export const GET = authed(
   ["ADMIN_COMPAGNIE", "GERANT_AGENCE", "SUPER_ADMIN"],
   async ({ session }) => {
-    const agences = getDb()
+    const agences = (await getDb()
       .prepare(`SELECT * FROM agencies WHERE company_id = ? ORDER BY name`)
-      .all(session.companyId) as Array<{ id: string; name: string }>;
+      .all(session.companyId)) as Array<{ id: string; name: string }>;
     return {
-      agences: agences.map((agence) => ({
-        ...agence,
-        // §2.4 : la continuité de la séquence est vérifiée à chaque consultation.
-        sequence: detectSequenceGaps(agence.id),
-      })),
+      agences: await Promise.all(
+        agences.map(async (agence) => ({
+          ...agence,
+          // §2.4 : la continuité de la séquence est vérifiée à chaque consultation.
+          sequence: await detectSequenceGaps(agence.id),
+        })),
+      ),
     };
   },
 );
@@ -31,22 +33,24 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
     horaires?: string;
   }>(request);
 
-  return tx((db) => {
+  return tx(async (db) => {
     const id = newId("agc");
-    db.prepare(
-      `INSERT INTO agencies
+    await db
+      .prepare(
+        `INSERT INTO agencies
          (id, company_id, name, city, address, gps, opening_hours, status, ticket_sequence, created_at)
        VALUES (?, ?, ?, ?, ?, NULL, ?, 'ACTIVE', 0, ?)`,
-    ).run(
-      id,
-      session.companyId,
-      input.nom,
-      input.ville,
-      input.adresse ?? null,
-      input.horaires ?? null,
-      nowIso(),
-    );
-    audit(
+      )
+      .run(
+        id,
+        session.companyId,
+        input.nom,
+        input.ville,
+        input.adresse ?? null,
+        input.horaires ?? null,
+        nowIso(),
+      );
+    await audit(
       {
         userId: session.userId,
         role: session.activeRole,
@@ -58,6 +62,6 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
       },
       db,
     );
-    return { agence: db.prepare(`SELECT * FROM agencies WHERE id = ?`).get(id) };
+    return { agence: await db.prepare(`SELECT * FROM agencies WHERE id = ?`).get(id) };
   });
 });

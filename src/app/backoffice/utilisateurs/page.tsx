@@ -13,17 +13,17 @@ export default async function Utilisateurs() {
   const companyId = session!.companyId!;
   const gestionnaire = ["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session!.activeRole);
 
-  const utilisateurs = db
+  const utilisateurs = (await db
     .prepare(
       `SELECT u.id, u.phone, u.name, u.status, u.created_at,
-              GROUP_CONCAT(ur.role || COALESCE(' @' || a.name, ''), ' | ') AS roles
+              GROUP_CONCAT(CONCAT(ur.role, COALESCE(CONCAT(' @', a.name), '')) SEPARATOR ' | ') AS roles
          FROM users u
          JOIN user_roles ur ON ur.user_id = u.id
          LEFT JOIN agencies a ON a.id = ur.agency_id
         WHERE ur.company_id = ? AND ur.role <> 'PASSAGER'
         GROUP BY u.id ORDER BY u.name`,
     )
-    .all(companyId) as Array<{
+    .all(companyId)) as Array<{
     id: string;
     phone: string;
     name: string;
@@ -32,18 +32,18 @@ export default async function Utilisateurs() {
     roles: string;
   }>;
 
-  const agences = db
+  const agences = (await db
     .prepare(`SELECT id, name FROM agencies WHERE company_id = ? ORDER BY name`)
-    .all(companyId) as Array<{ id: string; name: string }>;
+    .all(companyId)) as Array<{ id: string; name: string }>;
 
-  const bascules = db
+  const bascules = (await db
     .prepare(
       `SELECT a.created_at, u.name AS utilisateur, a.before_json, a.after_json
          FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
         WHERE a.action = 'BASCULE_ROLE' AND (a.company_id = ? OR a.company_id IS NULL)
         ORDER BY a.created_at DESC LIMIT 15`,
     )
-    .all(companyId) as Array<{
+    .all(companyId)) as Array<{
     created_at: string;
     utilisateur: string | null;
     before_json: string | null;

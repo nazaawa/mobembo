@@ -11,6 +11,6 @@ export const POST = authed(null, async ({ request, session, ip, device }) => {
   const target = await body<{ role: Role; companyId: string | null; agencyId: string | null }>(
     request,
   );
-  switchRole(getDb(), session, target, { ip, device });
-  return { session: readSession(session.id) };
+  await switchRole(getDb(), session, target, { ip, device });
+  return { session: await readSession(session.id) };
 });

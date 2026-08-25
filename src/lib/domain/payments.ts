@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { DbHandle } from "@/lib/db";
 import { getDb, tx } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
 import { nowIso } from "@/lib/core/time";
@@ -52,48 +52,54 @@ export async function initiatePayment(params: {
 }): Promise<InitiateResult> {
   const db = getDb();
 
-  const existing = db
+  const existing = (await db
     .prepare(`SELECT * FROM payments WHERE idempotency_key = ?`)
-    .get(params.idempotencyKey) as PaymentRow | undefined;
+    .get(params.idempotencyKey)) as PaymentRow | undefined;
   if (existing) {
-    const booking = getBooking(existing.booking_id, db);
-    const { holdId } = bookingPassengers(booking.id, db);
-    const seat = db
+    const booking = await getBooking(existing.booking_id, db);
+    const { holdId } = await bookingPassengers(booking.id, db);
+    const seat = (await db
       .prepare(`SELECT locked_until FROM trip_seats WHERE lock_session_id = ? LIMIT 1`)
-      .get(holdId) as { locked_until: string | null } | undefined;
+      .get(holdId)) as { locked_until: string | null } | undefined;
     return { payment: existing, lockedUntil: seat?.locked_until ?? "", replayed: true };
   }
 
-  const booking = getBooking(params.bookingId, db);
+  const booking = await getBooking(params.bookingId, db);
   if (booking.status !== "EN_ATTENTE") {
     throw errors.conflict("RESERVATION_CLOSE", "Cette réservation n'attend plus de paiement.");
   }
-  const trip = getTrip(booking.trip_id, db);
-  const company = getCompany(trip.company_id, db);
+  const trip = await getTrip(booking.trip_id, db);
+  const company = await getCompany(trip.company_id, db);
   const policy = companyPolicy(company);
   const amountDue = booking.total_amount - booking.credit_applied;
 
   if (amountDue <= 0) {
     // Entièrement réglée par un avoir : aucun opérateur n'est sollicité.
-    const tickets = tx((inner) => confirmBooking(inner, booking.id));
+    const tickets = await tx((inner) => confirmBooking(inner, booking.id));
     await flushSmsQueue(db);
-    const settled = db
+    const settled = (await db
       .prepare(`SELECT * FROM payments WHERE booking_id = ?`)
-      .get(booking.id) as PaymentRow | undefined;
+      .get(booking.id)) as PaymentRow | undefined;
     return {
       payment:
         settled ??
-        recordCreditPayment(db, booking.id, params.idempotencyKey, booking.currency as Currency, tickets),
+        (await recordCreditPayment(
+          db,
+          booking.id,
+          params.idempotencyKey,
+          booking.currency as Currency,
+          tickets,
+        )),
       lockedUntil: "",
       replayed: false,
     };
   }
 
   const paymentId = newId("pay");
-  const { holdId } = bookingPassengers(booking.id, db);
+  const { holdId } = await bookingPassengers(booking.id, db);
 
-  const lockedUntil = tx((inner) => {
-    inner
+  const lockedUntil = await tx(async (inner) => {
+    await inner
       .prepare(
         `INSERT INTO payments
            (id, booking_id, provider, provider_ref, idempotency_key, payer_phone,
@@ -127,11 +133,9 @@ export async function initiatePayment(params: {
     description: `Mobembo ${booking.id}`,
   });
 
-  db.prepare(`UPDATE payments SET provider_ref = ?, raw_response = ? WHERE id = ?`).run(
-    result.providerRef,
-    JSON.stringify(result.raw),
-    paymentId,
-  );
+  await db
+    .prepare(`UPDATE payments SET provider_ref = ?, raw_response = ? WHERE id = ?`)
+    .run(result.providerRef, JSON.stringify(result.raw), paymentId);
 
   if (result.status === "CONFIRME") {
     await settlePayment(paymentId, "CONFIRME", result.raw);
@@ -140,31 +144,33 @@ export async function initiatePayment(params: {
   }
 
   return {
-    payment: db.prepare(`SELECT * FROM payments WHERE id = ?`).get(paymentId) as PaymentRow,
+    payment: (await db.prepare<PaymentRow>(`SELECT * FROM payments WHERE id = ?`).get(paymentId)) as PaymentRow,
     lockedUntil,
     replayed: false,
   };
 }
 
-function recordCreditPayment(
-  db: Database,
+async function recordCreditPayment(
+  db: DbHandle,
   bookingId: string,
   idempotencyKey: string,
   currency: Currency,
   tickets: TicketRow[],
-): PaymentRow {
+): Promise<PaymentRow> {
   const id = newId("pay");
-  db.prepare(
-    `INSERT INTO payments
+  await db
+    .prepare(
+      `INSERT INTO payments
        (id, booking_id, provider, provider_ref, idempotency_key, payer_phone,
         amount, currency, status, created_at, resolved_at)
      VALUES (?, ?, 'AVOIR', NULL, ?, '', 0, ?, 'CONFIRME', ?, ?)`,
-  ).run(id, bookingId, idempotencyKey, currency, nowIso(), nowIso());
-  audit(
+    )
+    .run(id, bookingId, idempotencyKey, currency, nowIso(), nowIso());
+  await audit(
     { action: "PAIEMENT_PAR_AVOIR", entity: "booking", entityId: bookingId, after: { tickets: tickets.length } },
     db,
   );
-  return db.prepare(`SELECT * FROM payments WHERE id = ?`).get(id) as PaymentRow;
+  return (await db.prepare<PaymentRow>(`SELECT * FROM payments WHERE id = ?`).get(id)) as PaymentRow;
 }
 
 /**
@@ -177,8 +183,8 @@ export async function settlePayment(
   status: "CONFIRME" | "ECHOUE" | "INDETERMINE",
   raw?: unknown,
 ): Promise<{ payment: PaymentRow; tickets: TicketRow[] }> {
-  const outcome = tx((db) => {
-    const payment = db.prepare(`SELECT * FROM payments WHERE id = ?`).get(paymentId) as
+  const outcome = await tx(async (db) => {
+    const payment = (await db.prepare(`SELECT * FROM payments WHERE id = ?`).get(paymentId)) as
       | PaymentRow
       | undefined;
     if (!payment) throw errors.notFound("Paiement");
@@ -186,30 +192,37 @@ export async function settlePayment(
     if (payment.status === "CONFIRME") {
       return {
         payment,
-        tickets: db
-          .prepare(`SELECT * FROM tickets WHERE booking_id = ?`)
-          .all(payment.booking_id) as TicketRow[],
+        tickets: await db
+          .prepare<TicketRow>(`SELECT * FROM tickets WHERE booking_id = ?`)
+          .all(payment.booking_id),
       };
     }
     if (payment.status === "ECHOUE") return { payment, tickets: [] as TicketRow[] };
 
-    db.prepare(
-      `UPDATE payments SET status = ?, raw_response = COALESCE(?, raw_response), resolved_at = ?
+    await db
+      .prepare(
+        `UPDATE payments SET status = ?, raw_response = COALESCE(?, raw_response), resolved_at = ?
         WHERE id = ?`,
-    ).run(status, raw === undefined ? null : JSON.stringify(raw), status === "INDETERMINE" ? null : nowIso(), paymentId);
+      )
+      .run(
+        status,
+        raw === undefined ? null : JSON.stringify(raw),
+        status === "INDETERMINE" ? null : nowIso(),
+        paymentId,
+      );
 
     let tickets: TicketRow[] = [];
     if (status === "CONFIRME") {
-      tickets = confirmBooking(db, payment.booking_id);
+      tickets = await confirmBooking(db, payment.booking_id);
     } else if (status === "ECHOUE") {
-      const booking = getBooking(payment.booking_id, db);
-      const { holdId } = bookingPassengers(booking.id, db);
-      releaseLocks(db, booking.trip_id, holdId);
-      db.prepare(`UPDATE bookings SET status = 'EXPIRE' WHERE id = ?`).run(booking.id);
+      const booking = await getBooking(payment.booking_id, db);
+      const { holdId } = await bookingPassengers(booking.id, db);
+      await releaseLocks(db, booking.trip_id, holdId);
+      await db.prepare(`UPDATE bookings SET status = 'EXPIRE' WHERE id = ?`).run(booking.id);
     }
     // INDETERMINE : §3.2 « le siège reste verrouillé ». Aucun release ici.
 
-    audit(
+    await audit(
       {
         action: `PAIEMENT_${status}`,
         entity: "payment",
@@ -221,7 +234,7 @@ export async function settlePayment(
     );
 
     return {
-      payment: db.prepare(`SELECT * FROM payments WHERE id = ?`).get(paymentId) as PaymentRow,
+      payment: (await db.prepare<PaymentRow>(`SELECT * FROM payments WHERE id = ?`).get(paymentId)) as PaymentRow,
       tickets,
     };
   });
@@ -239,7 +252,7 @@ export async function settlePayment(
  */
 export async function pollPayment(paymentId: string): Promise<PaymentRow> {
   const db = getDb();
-  const payment = db.prepare(`SELECT * FROM payments WHERE id = ?`).get(paymentId) as
+  const payment = (await db.prepare(`SELECT * FROM payments WHERE id = ?`).get(paymentId)) as
     | PaymentRow
     | undefined;
   if (!payment) throw errors.notFound("Paiement");
@@ -250,10 +263,9 @@ export async function pollPayment(paymentId: string): Promise<PaymentRow> {
   const provider = getProvider(payment.provider as PaymentProviderId);
   const result = await provider.pollCharge(payment.provider_ref);
 
-  db.prepare(`UPDATE payments SET polls = polls + 1, last_polled_at = ? WHERE id = ?`).run(
-    nowIso(),
-    paymentId,
-  );
+  await db
+    .prepare(`UPDATE payments SET polls = polls + 1, last_polled_at = ? WHERE id = ?`)
+    .run(nowIso(), paymentId);
 
   if (result.status === "CONFIRME" || result.status === "ECHOUE") {
     const settled = await settlePayment(paymentId, result.status, result.raw);
@@ -263,31 +275,33 @@ export async function pollPayment(paymentId: string): Promise<PaymentRow> {
   if (elapsed >= POLL_WINDOW_MS) {
     // Cinq minutes sans réponse ferme : on n'invente pas de verdict.
     const settled = await settlePayment(paymentId, "INDETERMINE", result.raw);
-    openIndeterminateSupportTicket(db, settled.payment);
+    await openIndeterminateSupportTicket(db, settled.payment);
     return settled.payment;
   }
 
-  return db.prepare(`SELECT * FROM payments WHERE id = ?`).get(paymentId) as PaymentRow;
+  return (await db.prepare<PaymentRow>(`SELECT * FROM payments WHERE id = ?`).get(paymentId)) as PaymentRow;
 }
 
-function openIndeterminateSupportTicket(db: Database, payment: PaymentRow): void {
-  const already = db
+async function openIndeterminateSupportTicket(db: DbHandle, payment: PaymentRow): Promise<void> {
+  const already = (await db
     .prepare(`SELECT COUNT(*) AS n FROM support_tickets WHERE reference = ?`)
-    .get(payment.id) as { n: number };
+    .get(payment.id)) as { n: number };
   if (already.n > 0) return;
 
-  db.prepare(
-    `INSERT INTO support_tickets (id, kind, reference, severity, body, status, created_at)
+  await db
+    .prepare(
+      `INSERT INTO support_tickets (id, kind, reference, severity, body, status, created_at)
      VALUES (?, 'PAIEMENT_INDETERMINE', ?, 'BLOQUANTE', ?, 'OUVERT', ?)`,
-  ).run(
-    newId("sup"),
-    payment.id,
-    `Paiement ${payment.id} (${payment.provider}, ref ${payment.provider_ref ?? "—"}) ` +
-      `sans réponse après 5 minutes. Montant ${formatMoney(payment.amount, payment.currency as Currency)} ` +
-      `depuis ${payment.payer_phone}. Le siège reste verrouillé jusqu'à décision humaine.`,
-    nowIso(),
-  );
-  raiseAlert(
+    )
+    .run(
+      newId("sup"),
+      payment.id,
+      `Paiement ${payment.id} (${payment.provider}, ref ${payment.provider_ref ?? "—"}) ` +
+        `sans réponse après 5 minutes. Montant ${formatMoney(payment.amount, payment.currency as Currency)} ` +
+        `depuis ${payment.payer_phone}. Le siège reste verrouillé jusqu'à décision humaine.`,
+      nowIso(),
+    );
+  await raiseAlert(
     {
       kind: "PAIEMENT_INDETERMINE",
       severity: "BLOQUANTE",
@@ -306,7 +320,7 @@ export async function resolveIndeterminate(params: {
   actor: { userId: string; role: string };
 }): Promise<{ payment: PaymentRow; tickets: TicketRow[] }> {
   const db = getDb();
-  const payment = db.prepare(`SELECT * FROM payments WHERE id = ?`).get(params.paymentId) as
+  const payment = (await db.prepare(`SELECT * FROM payments WHERE id = ?`).get(params.paymentId)) as
     | PaymentRow
     | undefined;
   if (!payment) throw errors.notFound("Paiement");
@@ -314,17 +328,17 @@ export async function resolveIndeterminate(params: {
     throw errors.conflict("PAIEMENT_NON_INDETERMINE", "Ce paiement n'est pas en attente d'arbitrage.");
   }
 
-  db.prepare(`UPDATE payments SET status = 'INITIE' WHERE id = ?`).run(params.paymentId);
+  await db.prepare(`UPDATE payments SET status = 'INITIE' WHERE id = ?`).run(params.paymentId);
   const outcome = await settlePayment(params.paymentId, params.decision, {
     arbitrage: params.decision,
     note: params.note,
     par: params.actor.userId,
   });
 
-  db.prepare(
-    `UPDATE support_tickets SET status = 'RESOLU', closed_at = ? WHERE reference = ?`,
-  ).run(nowIso(), params.paymentId);
-  audit(
+  await db
+    .prepare(`UPDATE support_tickets SET status = 'RESOLU', closed_at = ? WHERE reference = ?`)
+    .run(nowIso(), params.paymentId);
+  await audit(
     {
       userId: params.actor.userId,
       role: params.actor.role,
@@ -359,12 +373,12 @@ export async function reconcileDay(day: string): Promise<{
   }> = [];
 
   for (const providerId of ["MPESA", "ORANGE_MONEY", "AIRTEL_MONEY"] as PaymentProviderId[]) {
-    const internal = db
+    const internal = (await db
       .prepare(
         `SELECT provider_ref, amount, currency, status FROM payments
           WHERE provider = ? AND created_at BETWEEN ? AND ? AND provider_ref IS NOT NULL`,
       )
-      .all(providerId, start, end) as Array<{
+      .all(providerId, start, end)) as Array<{
       provider_ref: string;
       amount: number;
       currency: string;
@@ -393,7 +407,7 @@ export async function reconcileDay(day: string): Promise<{
     }
 
     if (ecarts.length > 0) {
-      raiseAlert(
+      await raiseAlert(
         {
           kind: "PAIEMENT_INDETERMINE",
           severity: "MAJEURE",

@@ -13,7 +13,8 @@ import { getTrip } from "@/lib/domain/repo";
 export const GET = authedWith<{ tripId: string }>(
   ["CONTROLEUR", "GERANT_AGENCE", "ADMIN_COMPAGNIE", "SUPER_ADMIN"],
   async ({ params, session }) => {
-    assertCompanyScope(session, getTrip(params.tripId).company_id);
-    return { manifeste: buildManifest(params.tripId) };
+    const trip = await getTrip(params.tripId);
+    assertCompanyScope(session, trip.company_id);
+    return { manifeste: await buildManifest(params.tripId) };
   },
 );

@@ -15,9 +15,9 @@ export default async function Referentiel() {
   const companyId = session!.companyId!;
   const gestionnaire = ["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session!.activeRole);
 
-  const agences = db
+  const agences = (await db
     .prepare(`SELECT * FROM agencies WHERE company_id = ? ORDER BY name`)
-    .all(companyId) as Array<{
+    .all(companyId)) as Array<{
     id: string;
     name: string;
     city: string;
@@ -26,24 +26,24 @@ export default async function Referentiel() {
     ticket_sequence: number;
   }>;
 
-  const plans = db
-    .prepare(`SELECT * FROM seat_maps WHERE company_id = ? ORDER BY name`)
-    .all(companyId) as Array<{
-    id: string;
-    name: string;
-    rows: number;
-    layout_json: string;
-    disabled_seats: string;
-    seat_count: number;
-  }>;
+  const plans = (await db
+    .prepare<{
+      id: string;
+      name: string;
+      rows: number;
+      layout_json: string;
+      disabled_seats: string;
+      seat_count: number;
+    }>(`SELECT *, row_count AS \`rows\` FROM seat_maps WHERE company_id = ? ORDER BY name`)
+    .all(companyId));
 
-  const bus = db
+  const bus = (await db
     .prepare(
       `SELECT b.*, m.name AS plan, m.seat_count AS places FROM buses b
          JOIN seat_maps m ON m.id = b.seat_map_id
         WHERE b.company_id = ? ORDER BY b.plate_number`,
     )
-    .all(companyId) as Array<{
+    .all(companyId)) as Array<{
     id: string;
     plate_number: string;
     category: string;
@@ -52,15 +52,23 @@ export default async function Referentiel() {
     places: number;
   }>;
 
-  const lignes = db
+  const lignes = (await db
     .prepare(`SELECT * FROM routes WHERE company_id = ? ORDER BY origin_city, destination_city`)
-    .all(companyId) as Array<{
+    .all(companyId)) as Array<{
     id: string;
     origin_city: string;
     destination_city: string;
     distance_km: number | null;
     duration_est_min: number | null;
   }>;
+
+  // detectSequenceGaps est async : précalculé pour chaque agence, le rendu
+  // JSX ci-dessous reste synchrone.
+  const sequencesParAgence = new Map(
+    await Promise.all(
+      agences.map(async (a) => [a.id, await detectSequenceGaps(a.id, db)] as const),
+    ),
+  );
 
   return (
     <div className="space-y-5">
@@ -72,7 +80,7 @@ export default async function Referentiel() {
         ) : (
           <Table headers={["Agence", "Ville", "Adresse", "Horaires", "Séquence billets"]}>
             {agences.map((agence) => {
-              const sequence = detectSequenceGaps(agence.id, db);
+              const sequence = sequencesParAgence.get(agence.id)!;
               return (
                 <tr key={agence.id}>
                   <td className="px-2 py-1.5 font-medium">{agence.name}</td>

@@ -8,5 +8,5 @@ import { errors } from "@/lib/core/errors";
  */
 export const GET = authed(["GUICHETIER", "GERANT_AGENCE"], async ({ session }) => {
   if (!session.agencyId) throw errors.forbidden("Aucune agence rattachée à ce rôle.");
-  return { trajets: tripsForAgencyToday(session.agencyId) };
+  return { trajets: await tripsForAgencyToday(session.agencyId) };
 });

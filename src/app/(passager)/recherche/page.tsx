@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { searchTrips, knownCities } from "@/lib/domain/planning";
-import { activeListings } from "@/lib/domain/resale";
-import { formatTime, formatDateTime, todayInKinshasa } from "@/lib/core/time";
-import { Card, Badge, Empty, Money, Why } from "@/components/ui";
+import { todayInKinshasa } from "@/lib/core/time";
+import { Card, Empty, Why } from "@/components/ui";
 import { SearchForm } from "../search-form";
+import { ResultatsTrajets } from "./resultats";
 
 export const dynamic = "force-dynamic";
 
@@ -15,13 +14,19 @@ export default async function Recherche(props: PageProps<"/recherche">) {
   const date =
     typeof params.date === "string" ? params.date : todayInKinshasa();
 
-  const villes = knownCities();
+  const villes = await knownCities();
   const resultats =
-    origine && destination ? searchTrips({ origin: origine, destination, day: date }) : [];
+    origine && destination ? await searchTrips({ origin: origine, destination, day: date }) : [];
+
+  const dateLisible = new Date(`${date}T12:00:00Z`).toLocaleDateString("fr-CD", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 
   return (
-    <div className="space-y-5">
-      <Card>
+    <div className="space-y-6 pb-8">
+      <Card className="overflow-visible border-navy/10 shadow-[0_18px_50px_rgba(8,22,45,0.08)]">
         <SearchForm
           villes={villes}
           defaultDate={date}
@@ -30,19 +35,19 @@ export default async function Recherche(props: PageProps<"/recherche">) {
         />
       </Card>
 
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-lg font-semibold tracking-tight">
-          {origine} → {destination}
-        </h1>
-        <span className="text-xs text-texte-doux">
-          {resultats.length} départ{resultats.length > 1 ? "s" : ""} le{" "}
-          {new Date(`${date}T12:00:00Z`).toLocaleDateString("fr-CD", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-          })}
-        </span>
-      </div>
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">
+            Départs disponibles
+          </p>
+          <h1 className="mt-1 font-heading text-2xl font-bold tracking-tight text-navy sm:text-3xl">
+            {origine || "Départ"} <span className="text-accent">→</span> {destination || "Arrivée"}
+          </h1>
+        </div>
+        <p className="text-sm text-texte-doux">
+          {resultats.length} départ{resultats.length > 1 ? "s" : ""} · {dateLisible}
+        </p>
+      </header>
 
       {resultats.length === 0 ? (
         <Empty>
@@ -50,70 +55,7 @@ export default async function Recherche(props: PageProps<"/recherche">) {
           ceux-là ne se vendent qu&apos;au guichet, sans heure annoncée.
         </Empty>
       ) : (
-        <ul className="space-y-3">
-          {resultats.map((trajet) => {
-            const reventes = activeListings(trajet.tripId);
-            const placesTotal = trajet.placesEnLigne + reventes.length;
-            return (
-              <li key={trajet.tripId}>
-                <Card className="transition hover:border-accent/50">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl font-semibold tabular-nums">
-                          {formatTime(trajet.depart)}
-                        </span>
-                        <Badge tone={trajet.categorie === "VIP" ? "accent" : "neutre"}>
-                          {trajet.categorie}
-                        </Badge>
-                        {reventes.length > 0 && (
-                          <Badge tone="attention">
-                            {reventes.length} remis en vente
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-sm font-medium">{trajet.compagnie}</p>
-                      <p className="text-xs text-texte-doux">
-                        {trajet.dureeEstimeeMin
-                          ? `Durée estimée ${Math.floor(trajet.dureeEstimeeMin / 60)} h ${String(
-                              trajet.dureeEstimeeMin % 60,
-                            ).padStart(2, "0")}`
-                          : "Durée non communiquée"}
-                        {" · "}
-                        {formatDateTime(trajet.depart)}
-                      </p>
-                    </div>
-
-                    <div className="text-right">
-                      <div className="text-xl font-semibold">
-                        <Money amount={trajet.prixUsd} currency="USD" />
-                      </div>
-                      <div className="text-xs text-texte-doux">
-                        <Money amount={trajet.prixCdf} currency="CDF" />
-                      </div>
-                      <div className="mt-1 text-xs">
-                        {placesTotal > 0 ? (
-                          <span className={placesTotal <= 5 ? "text-attention" : "text-texte-doux"}>
-                            {placesTotal} place{placesTotal > 1 ? "s" : ""} en ligne
-                          </span>
-                        ) : (
-                          <span className="text-alerte">Complet en ligne</span>
-                        )}
-                      </div>
-                      <Link
-                        href={`/trajet/${trajet.tripId}`}
-                        className="mt-2 inline-flex rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-texte hover:brightness-110"
-                        aria-disabled={placesTotal === 0}
-                      >
-                        {placesTotal > 0 ? "Choisir un siège" : "Voir le plan"}
-                      </Link>
-                    </div>
-                  </div>
-                </Card>
-              </li>
-            );
-          })}
-        </ul>
+        <ResultatsTrajets resultats={resultats} />
       )}
 
       <Why>

@@ -33,13 +33,13 @@ export default async function Reversements() {
   const companyId = session!.companyId!;
   const periode = currentSettlementPeriod();
 
-  const reversements = db
-    .prepare(`SELECT * FROM settlements WHERE company_id = ? ORDER BY period_end DESC LIMIT 26`)
-    .all(companyId) as Reversement[];
+  const reversements = await db
+    .prepare<Reversement>(`SELECT * FROM settlements WHERE company_id = ? ORDER BY period_end DESC LIMIT 26`)
+    .all(companyId);
 
-  const abonnement = db
+  const abonnement = (await db
     .prepare(`SELECT * FROM subscriptions WHERE company_id = ? ORDER BY period_end DESC LIMIT 1`)
-    .get(companyId) as
+    .get(companyId)) as
     | {
         plan: string;
         buses_count: number;
@@ -50,12 +50,12 @@ export default async function Reversements() {
       }
     | undefined;
 
-  const lignes = db
+  const lignes = (await db
     .prepare(
       `SELECT * FROM settlement_lines WHERE settlement_id IN
          (SELECT id FROM settlements WHERE company_id = ? ORDER BY period_end DESC LIMIT 1)`,
     )
-    .all(companyId) as Array<{ id: string; type: string; label: string; amount: number; currency: string }>;
+    .all(companyId)) as Array<{ id: string; type: string; label: string; amount: number; currency: string }>;
 
   return (
     <div className="space-y-5">

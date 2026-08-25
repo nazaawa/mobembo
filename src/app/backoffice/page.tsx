@@ -1,9 +1,10 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { currentSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/core/time";
 import { currentSettlementPeriod } from "@/lib/domain/settlements";
-import { Card, Stat, Badge, Empty, Money, Why, Table } from "@/components/ui";
+import { Card, Badge, Empty, Money, Why, Table } from "@/components/ui";
 import { AcquitterAlerte } from "./alertes";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export default async function TableauDeBord() {
   jour.setUTCHours(0, 0, 0, 0);
   const debutJour = jour.toISOString();
 
-  const recettes = db
+  const recettes = (await db
     .prepare(
       `SELECT t.price_currency AS devise, COUNT(*) AS billets,
               COALESCE(SUM(t.price_amount), 0) AS montant,
@@ -33,7 +34,7 @@ export default async function TableauDeBord() {
           AND b.status = 'CONFIRME' AND t.created_at >= ?
         GROUP BY t.price_currency`,
     )
-    .all(companyId, debutJour) as Array<{
+    .all(companyId, debutJour)) as Array<{
     devise: string;
     billets: number;
     montant: number;
@@ -41,7 +42,7 @@ export default async function TableauDeBord() {
     enLigne: number;
   }>;
 
-  const caisses = db
+  const caisses = (await db
     .prepare(
       `SELECT cs.id, u.name AS agent, a.name AS agence, cs.opened_at, cs.closed_at,
               cs.variance, cs.currency, cs.opening_float
@@ -51,7 +52,7 @@ export default async function TableauDeBord() {
         WHERE a.company_id = ? AND cs.opened_at >= ?
         ORDER BY cs.opened_at DESC`,
     )
-    .all(companyId, debutJour) as Array<{
+    .all(companyId, debutJour)) as Array<{
     id: string;
     agent: string;
     agence: string;
@@ -62,12 +63,12 @@ export default async function TableauDeBord() {
     opening_float: number;
   }>;
 
-  const alertes = db
+  const alertes = (await db
     .prepare(
       `SELECT * FROM alerts WHERE (company_id = ? OR company_id IS NULL)
         AND acknowledged_at IS NULL ORDER BY created_at DESC LIMIT 10`,
     )
-    .all(companyId) as Array<{
+    .all(companyId)) as Array<{
     id: string;
     kind: string;
     severity: string;
@@ -75,7 +76,10 @@ export default async function TableauDeBord() {
     created_at: string;
   }>;
 
-  const prochainsDeparts = db
+  // MySQL n'a pas datetime('now') : les horodatages sont des chaînes ISO 8601,
+  // "maintenant" est calculé côté JS et lié comme paramètre ordinaire.
+  const maintenant = new Date().toISOString();
+  const prochainsDeparts = (await db
     .prepare(
       `SELECT t.id, t.departure_datetime, r.origin_city, r.destination_city, b.plate_number,
               (SELECT COUNT(*) FROM trip_seats s WHERE s.trip_id = t.id) AS sieges,
@@ -83,10 +87,10 @@ export default async function TableauDeBord() {
                 AND s.status IN ('VENDU','EMBARQUE')) AS vendus
          FROM trips t JOIN routes r ON r.id = t.route_id JOIN buses b ON b.id = t.bus_id
         WHERE t.company_id = ? AND t.status IN ('PLANIFIE','EN_VENTE')
-          AND t.departure_datetime >= datetime('now')
+          AND t.departure_datetime >= ?
         ORDER BY t.departure_datetime LIMIT 8`,
     )
-    .all(companyId) as Array<{
+    .all(companyId, maintenant)) as Array<{
     id: string;
     departure_datetime: string;
     origin_city: string;
@@ -97,50 +101,60 @@ export default async function TableauDeBord() {
   }>;
 
   const periode = currentSettlementPeriod();
-  const principal = recettes.find((r) => r.devise === "USD") ?? recettes[0];
+  const billetsTotal = recettes.reduce((total, recette) => total + recette.billets, 0);
+  const caissesOuvertes = caisses.filter((caisse) => !caisse.closed_at).length;
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Recettes du jour</h1>
-          <p className="text-sm text-texte-doux">
-            Depuis {formatDateTime(debutJour)} — mise à jour à chaque vente.
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">Tableau de bord</p>
+          <h1 className="mt-1 font-heading text-3xl font-bold tracking-tight text-navy">Activité du jour</h1>
+          <p className="mt-1 text-sm text-texte-doux">
+            Recettes, caisses et départs depuis {formatDateTime(debutJour)}.
           </p>
         </div>
-        <span className="text-xs text-texte-doux">
-          Prochain reversement : {formatDateTime(periode.payableOn)}
-        </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-texte-doux">Reversement : {formatDateTime(periode.payableOn)}</span>
+          <Link href="/backoffice/planification" className="inline-flex min-h-11 items-center justify-center rounded-[10px] bg-accent px-4 text-sm font-bold text-white hover:bg-accent-profond">Planifier un départ</Link>
+        </div>
       </div>
 
-      {recettes.length === 0 ? (
-        <Empty>Aucune vente enregistrée aujourd&apos;hui.</Empty>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {principal && (
-            <>
-              <Stat
-                label="Recette totale"
-                value={<Money amount={principal.montant} currency={principal.devise} />}
-                hint={`${principal.billets} billet(s)`}
-                tone="succes"
-              />
-              <Stat
-                label="Au guichet"
-                value={<Money amount={principal.guichet} currency={principal.devise} />}
-              />
-              <Stat
-                label="En ligne"
-                value={<Money amount={principal.enLigne} currency={principal.devise} />}
-              />
-            </>
-          )}
-          <Stat
-            label="Caisses ouvertes"
-            value={caisses.filter((c) => !c.closed_at).length}
-            hint={`${caisses.length} session(s) aujourd'hui`}
-          />
-        </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="rounded-[14px] bg-navy p-5 text-white shadow-[0_12px_30px_rgba(8,22,45,0.12)]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-white/55">Recette du jour</p>
+          <div className="mt-3 space-y-1">
+            {recettes.length > 0 ? recettes.map((recette) => (
+              <p key={recette.devise} className="text-2xl font-bold tabular-nums"><Money amount={recette.montant} currency={recette.devise} /></p>
+            )) : <p className="text-2xl font-bold">—</p>}
+          </div>
+          <p className="mt-3 text-xs text-white/55">Mise à jour après chaque vente confirmée</p>
+        </section>
+        <DashboardKpi label="Billets vendus" value={billetsTotal} hint="Guichet et vente en ligne" icon="ticket" />
+        <DashboardKpi label="Caisses ouvertes" value={caissesOuvertes} hint={`${caisses.length} session(s) aujourd'hui`} icon="cash" />
+        <DashboardKpi label="Alertes à traiter" value={alertes.length} hint={alertes.length ? "Une action est attendue" : "Aucune anomalie ouverte"} icon="alert" tone={alertes.length ? "alerte" : "succes"} />
+      </div>
+
+      {recettes.length > 0 && (
+        <Card title="Répartition des ventes" subtitle="Montants réels par canal, sans mélanger les devises.">
+          <div className="grid gap-5 lg:grid-cols-2">
+            {recettes.map((recette) => {
+              const base = Math.max(recette.montant, 1);
+              const guichetPct = Math.round((recette.guichet / base) * 100);
+              const enLignePct = Math.round((recette.enLigne / base) * 100);
+              return (
+                <div key={recette.devise} className="rounded-[12px] border border-bordure p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-navy">Ventes en {recette.devise}</p>
+                    <Badge tone="neutre">{recette.billets} billet(s)</Badge>
+                  </div>
+                  <ChannelBar label="Guichet" amount={<Money amount={recette.guichet} currency={recette.devise} />} percent={guichetPct} tone="navy" />
+                  <ChannelBar label="En ligne" amount={<Money amount={recette.enLigne} currency={recette.devise} />} percent={enLignePct} tone="accent" />
+                </div>
+              );
+            })}
+          </div>
+        </Card>
       )}
 
       {alertes.length > 0 && (
@@ -248,4 +262,53 @@ export default async function TableauDeBord() {
       </Why>
     </div>
   );
+}
+
+function DashboardKpi({
+  label,
+  value,
+  hint,
+  icon,
+  tone = "neutre",
+}: {
+  label: string;
+  value: ReactNode;
+  hint: string;
+  icon: "ticket" | "cash" | "alert";
+  tone?: "neutre" | "alerte" | "succes";
+}) {
+  return (
+    <section className="rounded-[14px] border border-bordure bg-surface p-5 shadow-[0_4px_16px_rgba(8,22,45,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-texte-doux">{label}</p>
+          <p className={`mt-2 text-3xl font-bold tabular-nums ${tone === "alerte" ? "text-alerte" : tone === "succes" ? "text-succes" : "text-navy"}`}>{value}</p>
+        </div>
+        <span className={`flex h-10 w-10 items-center justify-center rounded-[10px] ${tone === "alerte" ? "bg-alerte-doux text-alerte" : tone === "succes" ? "bg-succes-doux text-succes" : "bg-surface-alt text-navy"}`} aria-hidden>
+          <KpiIcon name={icon} />
+        </span>
+      </div>
+      <p className="mt-3 text-xs text-texte-doux">{hint}</p>
+    </section>
+  );
+}
+
+function ChannelBar({ label, amount, percent, tone }: { label: string; amount: ReactNode; percent: number; tone: "navy" | "accent" }) {
+  return (
+    <div className="mt-4">
+      <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
+        <span className="text-texte-doux">{label}</span>
+        <span className="font-semibold tabular-nums text-navy">{amount} · {percent}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-surface-alt">
+        <div className={`h-full rounded-full ${tone === "navy" ? "bg-navy" : "bg-accent"}`} style={{ width: `${Math.min(100, percent)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function KpiIcon({ name }: { name: "ticket" | "cash" | "alert" }) {
+  if (name === "cash") return <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>;
+  if (name === "alert") return <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17.5h.01"/></svg>;
+  return <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7a2 2 0 0 0 0 4v6h16v-6a2 2 0 0 0 0-4V5H4v2Z"/><path d="M9 8v6"/></svg>;
 }

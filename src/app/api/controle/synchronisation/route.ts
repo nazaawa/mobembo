@@ -14,7 +14,7 @@ export const POST = authed(
       scans: Array<{ clientOpId: string; rawQr: string; clientTime: string }>;
     }>(request);
 
-    const resultats = syncScans({
+    const resultats = await syncScans({
       tripId,
       deviceId: device ?? "terminal-inconnu",
       scans,

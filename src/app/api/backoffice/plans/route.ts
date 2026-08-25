@@ -7,9 +7,11 @@ import type { SeatMapRow } from "@/lib/domain/repo";
 
 /** GET — plans de sièges de la compagnie, avec leur grille rendue. */
 export const GET = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ session }) => {
-  const plans = getDb()
-    .prepare(`SELECT * FROM seat_maps WHERE company_id = ? OR company_id IS NULL ORDER BY name`)
-    .all(session.companyId) as SeatMapRow[];
+  const plans = await getDb()
+    .prepare<SeatMapRow>(
+      `SELECT *, row_count AS \`rows\` FROM seat_maps WHERE company_id = ? OR company_id IS NULL ORDER BY name`,
+    )
+    .all(session.companyId);
 
   return {
     plans: plans.map((plan) => ({
@@ -33,7 +35,7 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
     siegesDesactives: string[];
   }>(request);
   return {
-    plan: createSeatMap({
+    plan: await createSeatMap({
       companyId: session.companyId,
       name: input.nom,
       rows: input.rangees,
@@ -53,7 +55,7 @@ export const PUT = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request, 
     siegesDesactives: string[];
   }>(request);
   return {
-    plan: updateSeatMap({
+    plan: await updateSeatMap({
       seatMapId: input.id,
       name: input.nom,
       rows: input.rangees,

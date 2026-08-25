@@ -32,9 +32,10 @@ export const POST = authed(
     }
     const { ventes } = await body<{ ventes: OfflineSale[] }>(request);
 
-    const resultats = ventes.map((vente) => {
+    const resultats = [];
+    for (const vente of ventes) {
       try {
-        const result = posSell({
+        const result = await posSell({
           tripId: vente.tripId,
           seatNumbers: vente.sieges,
           passengers: vente.passagers,
@@ -53,7 +54,7 @@ export const POST = authed(
           deviceId: device ?? undefined,
           ip,
         });
-        return {
+        resultats.push({
           clientOpId: vente.clientOpId,
           statut: "APPLIQUE" as const,
           billets: result.tickets.map((t) => ({
@@ -61,16 +62,16 @@ export const POST = authed(
             sequence: t.sequence_number,
             qr: t.qr_signature,
           })),
-        };
+        });
       } catch (error) {
-        return {
+        resultats.push({
           clientOpId: vente.clientOpId,
           statut: "REFUSE" as const,
           erreur: error instanceof DomainError ? error.code : "ERREUR_INTERNE",
           message: error instanceof DomainError ? error.message : "Erreur interne.",
-        };
+        });
       }
-    });
+    }
 
     return {
       resultats,

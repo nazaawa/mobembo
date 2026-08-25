@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import type { Database } from "better-sqlite3";
+import type { DbHandle } from "@/lib/db";
 import { getDb } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
 import { nowIso, plusDays, isPast } from "@/lib/core/time";
@@ -52,45 +52,46 @@ export interface Session {
   availableRoles: { role: Role; companyId: string | null; agencyId: string | null }[];
 }
 
-export function createSession(
-  db: Database,
+export async function createSession(
+  db: DbHandle,
   user: UserRow,
   role: { role: Role; company_id: string | null; agency_id: string | null },
-): string {
+): Promise<string> {
   const id = newId("ses");
-  db.prepare(
-    `INSERT INTO auth_sessions
+  await db
+    .prepare(
+      `INSERT INTO auth_sessions
        (id, user_id, active_role, company_id, agency_id, created_at, expires_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, user.id, role.role, role.company_id, role.agency_id, nowIso(), plusDays(30));
+    )
+    .run(id, user.id, role.role, role.company_id, role.agency_id, nowIso(), plusDays(30));
   return id;
 }
 
-export function readSession(sessionId: string, db: Database = getDb()): Session | null {
-  const row = db
-    .prepare(
+export async function readSession(sessionId: string, db: DbHandle = getDb()): Promise<Session | null> {
+  const row = await db
+    .prepare<{
+      id: string;
+      user_id: string;
+      active_role: Role;
+      company_id: string | null;
+      agency_id: string | null;
+      expires_at: string;
+      revoked_at: string | null;
+      name: string;
+      phone: string;
+      user_status: string;
+    }>(
       `SELECT s.*, u.name, u.phone, u.status AS user_status
          FROM auth_sessions s JOIN users u ON u.id = s.user_id
         WHERE s.id = ?`,
     )
-    .get(sessionId) as
-    | {
-        id: string;
-        user_id: string;
-        active_role: Role;
-        company_id: string | null;
-        agency_id: string | null;
-        expires_at: string;
-        revoked_at: string | null;
-        name: string;
-        phone: string;
-        user_status: string;
-      }
-    | undefined;
+    .get(sessionId);
 
   if (!row || row.revoked_at || row.user_status !== "ACTIVE") return null;
   if (isPast(row.expires_at)) return null;
 
+  const roles = await rolesOf(row.user_id, db);
   return {
     id: row.id,
     userId: row.user_id,
@@ -99,7 +100,7 @@ export function readSession(sessionId: string, db: Database = getDb()): Session 
     activeRole: row.active_role,
     companyId: row.company_id,
     agencyId: row.agency_id,
-    availableRoles: rolesOf(row.user_id, db).map((r) => ({
+    availableRoles: roles.map((r) => ({
       role: r.role,
       companyId: r.company_id,
       agencyId: r.agency_id,
@@ -136,12 +137,12 @@ export async function requireRole(...allowed: Role[]): Promise<Session> {
 }
 
 /** §1.5 : « Il bascule explicitement, et la bascule est tracée. » */
-export function switchRole(
-  db: Database,
+export async function switchRole(
+  db: DbHandle,
   session: Session,
   target: { role: Role; companyId: string | null; agencyId: string | null },
   context?: { ip?: string | null; device?: string | null },
-): void {
+): Promise<void> {
   const owns = session.availableRoles.some(
     (r) =>
       r.role === target.role &&
@@ -150,11 +151,11 @@ export function switchRole(
   );
   if (!owns) throw errors.forbidden("Ce rôle n'est pas attribué à votre compte.");
 
-  db.prepare(
-    `UPDATE auth_sessions SET active_role = ?, company_id = ?, agency_id = ? WHERE id = ?`,
-  ).run(target.role, target.companyId, target.agencyId, session.id);
+  await db
+    .prepare(`UPDATE auth_sessions SET active_role = ?, company_id = ?, agency_id = ? WHERE id = ?`)
+    .run(target.role, target.companyId, target.agencyId, session.id);
 
-  audit(
+  await audit(
     {
       userId: session.userId,
       role: session.activeRole,
@@ -171,8 +172,8 @@ export function switchRole(
   );
 }
 
-export function revokeSession(db: Database, sessionId: string): void {
-  db.prepare(`UPDATE auth_sessions SET revoked_at = ? WHERE id = ?`).run(nowIso(), sessionId);
+export async function revokeSession(db: DbHandle, sessionId: string): Promise<void> {
+  await db.prepare(`UPDATE auth_sessions SET revoked_at = ? WHERE id = ?`).run(nowIso(), sessionId);
 }
 
 /** Une compagnie ne voit jamais les données d'une autre. */

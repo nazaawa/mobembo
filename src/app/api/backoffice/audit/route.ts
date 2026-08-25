@@ -33,13 +33,13 @@ export const GET = authed(
     }
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    const entries = getDb()
+    const entries = (await getDb()
       .prepare(
         `SELECT a.*, u.name AS utilisateur FROM audit_log a
          LEFT JOIN users u ON u.id = a.user_id
          ${where} ORDER BY a.created_at DESC LIMIT ?`,
       )
-      .all(...values, limit) as Array<Record<string, unknown>>;
+      .all(...values, limit)) as Array<Record<string, unknown>>;
 
     if (format === "csv") {
       const columns = [

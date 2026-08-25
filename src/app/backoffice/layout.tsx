@@ -4,77 +4,85 @@ import { currentSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/domain/types";
 import { MobemboLogo } from "@/components/brand";
+import { BackofficeNavigation } from "./navigation";
 
 export const dynamic = "force-dynamic";
 
-const ONGLETS = [
-  { href: "/backoffice", label: "Tableau de bord" },
-  { href: "/backoffice/planification", label: "Planification" },
-  { href: "/backoffice/referentiel", label: "Référentiel" },
-  { href: "/backoffice/rapports", label: "Rapports" },
-  { href: "/backoffice/reversements", label: "Reversements" },
-  { href: "/backoffice/audit", label: "Journal d'audit" },
-  { href: "/backoffice/utilisateurs", label: "Utilisateurs" },
-  { href: "/backoffice/parametres", label: "Paramètres" },
+const GROUPES = [
+  { label: "Exploitation", items: [
+    { href: "/backoffice", label: "Tableau de bord", icon: "grid" },
+    { href: "/backoffice/planification", label: "Planification", icon: "calendar" },
+    { href: "/backoffice/referentiel", label: "Référentiel", icon: "bus" },
+  ] },
+  { label: "Finances", items: [
+    { href: "/backoffice/rapports", label: "Rapports", icon: "chart" },
+    { href: "/backoffice/reversements", label: "Reversements", icon: "wallet" },
+  ] },
+  { label: "Gouvernance", items: [
+    { href: "/backoffice/audit", label: "Journal d'audit", icon: "journal" },
+    { href: "/backoffice/utilisateurs", label: "Utilisateurs", icon: "users" },
+    { href: "/backoffice/parametres", label: "Paramètres", icon: "settings" },
+  ] },
 ] as const;
 
 export default async function BackofficeLayout({ children }: LayoutProps<"/backoffice">) {
   const session = await currentSession();
-  if (
-    !session ||
-    !["ADMIN_COMPAGNIE", "GERANT_AGENCE", "SUPER_ADMIN"].includes(session.activeRole)
-  ) {
+  if (!session || !["ADMIN_COMPAGNIE", "GERANT_AGENCE", "SUPER_ADMIN"].includes(session.activeRole)) {
     redirect("/guichet/connexion");
   }
 
-  const alertes = getDb()
+  const alertes = (await getDb()
     .prepare(
       `SELECT COUNT(*) AS n FROM alerts
-        WHERE (company_id = ? OR company_id IS NULL) AND acknowledged_at IS NULL`,
+      WHERE (company_id = ? OR company_id IS NULL) AND acknowledged_at IS NULL`,
     )
-    .get(session.companyId) as { n: number };
+    .get(session.companyId)) as { n: number };
 
   return (
-    <div className="flex min-h-full flex-col">
-      <header className="border-b border-bordure bg-surface">
-        <div className="mx-auto max-w-7xl px-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 py-2.5">
-            <Link href="/backoffice" className="flex min-h-11 items-center gap-2" aria-label="Mobembo Back-office">
+    <div className="min-h-full bg-fond lg:grid lg:grid-cols-[16.5rem_minmax(0,1fr)]">
+      <aside className="hidden border-r border-bordure bg-navy text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+        <Link href="/backoffice" className="flex min-h-20 items-center border-b border-white/10 px-6" aria-label="Mobembo Back-office">
+          <span className="rounded-[10px] bg-white px-3 py-2"><MobemboLogo alt="" className="h-7 w-auto" /></span>
+        </Link>
+        <div className="px-5 pt-5">
+          <span className="inline-flex rounded-md bg-white/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/75">Back-office</span>
+        </div>
+        <BackofficeNavigation groups={GROUPES} />
+        <div className="mt-auto border-t border-white/10 p-5">
+          <p className="truncate text-sm font-semibold">{session.name}</p>
+          <p className="mt-0.5 text-xs text-white/55">{ROLE_LABELS[session.activeRole]}</p>
+          <Link href="/guichet/connexion" className="mt-3 inline-flex min-h-11 items-center text-xs font-semibold text-accent-clair hover:text-white">Changer de rôle</Link>
+        </div>
+      </aside>
+
+      <div className="min-w-0">
+        <header className="sticky top-0 z-30 border-b border-bordure bg-surface/95 backdrop-blur-sm">
+          <div className="flex min-h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+            <Link href="/backoffice" className="flex items-center gap-2 lg:hidden" aria-label="Mobembo Back-office">
               <MobemboLogo alt="" className="h-7 w-auto" />
-              <span className="rounded bg-accent-doux px-1.5 py-0.5 text-[11px] font-medium text-accent">
-                Back-office
-              </span>
+              <span className="rounded bg-accent-doux px-1.5 py-0.5 text-[10px] font-bold text-accent">Admin</span>
             </Link>
-            <div className="flex items-center gap-3 text-sm">
+            <div className="hidden lg:block">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-texte-doux">Pilotage compagnie</p>
+              <p className="text-sm font-semibold text-navy">Vue opérationnelle</p>
+            </div>
+            <div className="flex items-center gap-3">
               {alertes.n > 0 && (
-                <span className="rounded-md border border-alerte/40 bg-alerte-doux px-2 py-0.5 text-xs font-medium text-alerte">
+                <Link href="/backoffice" className="inline-flex min-h-11 items-center gap-2 rounded-[10px] border border-alerte/25 bg-alerte-doux px-3 text-xs font-semibold text-alerte">
+                  <span className="h-2 w-2 rounded-full bg-alerte" aria-hidden />
                   {alertes.n} alerte{alertes.n > 1 ? "s" : ""}
-                </span>
+                </Link>
               )}
-              <span className="text-texte-doux">
-                {session.name} · {ROLE_LABELS[session.activeRole]}
-              </span>
-              <Link href="/guichet/connexion" className="text-xs text-accent hover:underline">
-                Changer de rôle
-              </Link>
+              <div className="hidden text-right sm:block lg:hidden">
+                <p className="text-xs font-semibold">{session.name}</p>
+                <p className="text-[11px] text-texte-doux">{ROLE_LABELS[session.activeRole]}</p>
+              </div>
             </div>
           </div>
-
-          <nav className="-mb-px flex gap-1 overflow-x-auto text-sm">
-            {ONGLETS.map((onglet) => (
-              <Link
-                key={onglet.href}
-                href={onglet.href}
-                className="whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-texte-doux transition hover:border-accent hover:text-texte"
-              >
-                {onglet.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5">{children}</main>
+          <div className="border-t border-bordure px-4 lg:hidden"><BackofficeNavigation groups={GROUPES} mobile /></div>
+        </header>
+        <main className="mx-auto w-full max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+      </div>
     </div>
   );
 }

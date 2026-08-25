@@ -19,7 +19,7 @@ export const POST = handler(async ({ request }) => {
     avoirId?: string | null;
   }>(request);
 
-  const { booking, dueAmount } = createBooking({
+  const { booking, dueAmount } = await createBooking({
     tripId: input.tripId,
     holdId: input.holdId,
     buyerPhone: input.telephone,
@@ -32,6 +32,6 @@ export const POST = handler(async ({ request }) => {
   return {
     reservation: booking,
     montantDu: dueAmount,
-    avoirsDisponibles: activeCredits(input.telephone),
+    avoirsDisponibles: await activeCredits(input.telephone),
   };
 });

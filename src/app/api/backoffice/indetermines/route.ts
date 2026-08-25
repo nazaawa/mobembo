@@ -7,7 +7,7 @@ import { getDb } from "@/lib/db";
  */
 export const GET = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ session }) => {
   const db = getDb();
-  const paiements = db
+  const paiements = await db
     .prepare(
       `SELECT p.*, b.trip_id, b.buyer_name, b.buyer_phone, s.body AS ticketSupport
          FROM payments p
@@ -19,14 +19,14 @@ export const GET = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ session }
     )
     .all(session.companyId, session.companyId);
 
-  const taux = db
+  const taux = (await db
     .prepare(
       `SELECT
          COUNT(*) AS initiations,
          SUM(CASE WHEN status = 'INDETERMINE' THEN 1 ELSE 0 END) AS indetermines
        FROM payments WHERE provider <> 'ESPECES'`,
     )
-    .get() as { initiations: number; indetermines: number };
+    .get()) as { initiations: number; indetermines: number };
 
   return {
     paiements,

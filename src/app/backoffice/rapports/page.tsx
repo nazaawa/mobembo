@@ -11,11 +11,14 @@ export const dynamic = "force-dynamic";
  * L'heure courante est lue hors du corps du composant : un rendu doit rester
  * pur, et deux appels à `Date.now()` dans le même rendu peuvent différer.
  */
-async function fenetre(jours: number): Promise<{ from: string; to: string }> {
+async function fenetre(jours: number): Promise<{ from: string; to: string; ilYA48h: string }> {
   const maintenant = Date.now();
   return {
     from: new Date(maintenant - jours * 86_400_000).toISOString(),
     to: new Date(maintenant + 86_400_000).toISOString(),
+    // MySQL n'a pas datetime('now') : la fenêtre SLA (48h) est calculée ici
+    // et liée en paramètre plutôt que calculée en SQL.
+    ilYA48h: new Date(maintenant - 48 * 3_600_000).toISOString(),
   };
 }
 
@@ -27,11 +30,11 @@ export default async function Rapports(props: PageProps<"/backoffice/rapports">)
   const db = getDb();
 
   const jours = Number(typeof params.jours === "string" ? params.jours : 30);
-  const { from, to } = await fenetre(jours);
+  const { from, to, ilYA48h } = await fenetre(jours);
 
-  const recettes = revenueReport({ companyId, from, to, db });
+  const recettes = await revenueReport({ companyId, from, to, db });
 
-  const ecarts = db
+  const ecarts = (await db
     .prepare(
       `SELECT u.name AS agent, COUNT(*) AS sessions,
               COALESCE(SUM(cs.variance), 0) AS cumul,
@@ -42,7 +45,7 @@ export default async function Rapports(props: PageProps<"/backoffice/rapports">)
         WHERE a.company_id = ? AND cs.closed_at IS NOT NULL AND cs.closed_at >= ?
         GROUP BY u.name, cs.currency ORDER BY absolu DESC`,
     )
-    .all(companyId, from) as Array<{
+    .all(companyId, from)) as Array<{
     agent: string;
     sessions: number;
     cumul: number;
@@ -50,9 +53,9 @@ export default async function Rapports(props: PageProps<"/backoffice/rapports">)
     currency: string;
   }>;
 
-  const axes = db
+  const axes = (await db
     .prepare(
-      `SELECT r.origin_city || ' → ' || r.destination_city AS axe,
+      `SELECT CONCAT(r.origin_city, ' → ', r.destination_city) AS axe,
               COUNT(DISTINCT t.id) AS departs,
               SUM((SELECT COUNT(*) FROM trip_seats s WHERE s.trip_id = t.id)) AS sieges,
               SUM((SELECT COUNT(*) FROM tickets k WHERE k.trip_id = t.id AND k.status = 'EMBARQUE')) AS embarques,
@@ -63,7 +66,7 @@ export default async function Rapports(props: PageProps<"/backoffice/rapports">)
         WHERE t.company_id = ? AND t.departure_datetime >= ? AND t.status IN ('PARTI','CLOTURE')
         GROUP BY axe ORDER BY departs DESC`,
     )
-    .all(companyId, from) as Array<{
+    .all(companyId, from)) as Array<{
     axe: string;
     departs: number;
     sieges: number;
@@ -72,24 +75,28 @@ export default async function Rapports(props: PageProps<"/backoffice/rapports">)
     vendus: number;
   }>;
 
-  const revente = db
-    .prepare(
-      `SELECT COUNT(*) AS annonces,
-              SUM(CASE WHEN status = 'VENDUE' THEN 1 ELSE 0 END) AS vendues,
-              COALESCE(SUM(fee_amount), 0) AS commissions,
-              AVG(CASE WHEN sold_at IS NOT NULL
-                  THEN (julianday(sold_at) - julianday(listed_at)) * 24 END) AS delaiMoyenH
-         FROM resale_listings
+  // julianday() est spécifique à SQLite : le délai moyen de revente (en
+  // heures) est calculé côté JS à partir des horodatages ISO 8601.
+  const resaleRows = await db
+    .prepare<{ sold_at: string | null; listed_at: string; status: string; fee_amount: number | null }>(
+      `SELECT sold_at, listed_at, status, fee_amount FROM resale_listings
         WHERE trip_id IN (SELECT id FROM trips WHERE company_id = ?) AND listed_at >= ?`,
     )
-    .get(companyId, from) as {
-    annonces: number;
-    vendues: number;
-    commissions: number;
-    delaiMoyenH: number | null;
+    .all(companyId, from);
+  const delaisRevente = resaleRows
+    .filter((r) => r.sold_at)
+    .map((r) => (new Date(r.sold_at as string).getTime() - new Date(r.listed_at).getTime()) / 3_600_000);
+  const revente = {
+    annonces: resaleRows.length,
+    vendues: resaleRows.filter((r) => r.status === "VENDUE").length,
+    commissions: resaleRows.reduce((somme, r) => somme + (r.fee_amount ?? 0), 0),
+    delaiMoyenH:
+      delaisRevente.length > 0
+        ? delaisRevente.reduce((a, b) => a + b, 0) / delaisRevente.length
+        : null,
   };
 
-  const indicateurs = db
+  const indicateurs = (await db
     .prepare(
       `SELECT
          (SELECT COUNT(*) FROM alerts WHERE company_id = ? AND kind = 'TROU_SEQUENCE') AS trous,
@@ -101,11 +108,11 @@ export default async function Rapports(props: PageProps<"/backoffice/rapports">)
              AND p.status = 'INDETERMINE') AS indetermines,
          (SELECT COUNT(*) FROM refunds r JOIN tickets t ON t.id = r.ticket_id
            WHERE t.trip_id IN (SELECT id FROM trips WHERE company_id = ?)
-             AND r.status = 'EN_FILE' AND r.created_at <= datetime('now','-48 hours')) AS remboursementsEnRetard,
+             AND r.status = 'EN_FILE' AND r.created_at <= ?) AS remboursementsEnRetard,
          (SELECT COUNT(*) FROM sync_log WHERE kind = 'VENTE_POS' AND result = 'APPLIQUE') AS syncOk,
          (SELECT COUNT(*) FROM sync_log WHERE kind = 'VENTE_POS' AND result <> 'APPLIQUE') AS syncKo`,
     )
-    .get(companyId, companyId, companyId, companyId) as {
+    .get(companyId, companyId, companyId, companyId, ilYA48h)) as {
     trous: number;
     initiations: number;
     indetermines: number;

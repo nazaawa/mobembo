@@ -20,16 +20,17 @@ export default async function AccueilGuichet() {
     return <Empty>Aucune agence n&apos;est rattachée à ce rôle. Contactez la direction.</Empty>;
   }
 
-  const agence = getAgency(session.agencyId);
-  const caisse = openSessionFor(session.userId, session.agencyId);
-  const resume = caisse ? cashSessionSummary(caisse.id) : null;
-  const trajets = tripsForAgencyToday(session.agencyId);
+  const agence = await getAgency(session.agencyId);
+  const caisse = await openSessionFor(session.userId, session.agencyId);
+  const resume = caisse ? await cashSessionSummary(caisse.id) : null;
+  const trajets = await tripsForAgencyToday(session.agencyId);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">{agence.name}</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">Poste de vente</p>
+          <h1 className="mt-1 font-heading text-3xl font-bold tracking-tight text-navy">{agence.name}</h1>
           <p className="text-sm text-texte-doux">
             {agence.city} · {agence.opening_hours ?? "horaires non renseignés"}
           </p>
@@ -123,38 +124,42 @@ export default async function AccueilGuichet() {
         {trajets.length === 0 ? (
           <Empty>Aucun départ programmé au départ de cette agence.</Empty>
         ) : (
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {trajets.map((trajet) => (
-              <li key={trajet.id}>
-                <Link
-                  href={`/guichet/vente/${trajet.id}`}
-                  className={`block rounded-lg border p-3 transition hover:border-accent ${
-                    resume ? "border-bordure bg-surface" : "pointer-events-none border-bordure opacity-50"
-                  }`}
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-lg font-semibold tabular-nums">
-                      {trajet.departure_mode === "HORAIRE_FIXE"
-                        ? formatTime(trajet.departure_datetime)
-                        : "au remplissage"}
-                    </span>
-                    <Badge tone={trajet.category === "VIP" ? "accent" : "neutre"}>
-                      {trajet.category}
-                    </Badge>
+          <ul className="space-y-2">
+            {trajets.map((trajet) => {
+              const contenu = (
+                <>
+                  <div className="md:min-w-28">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-texte-doux">Départ</p>
+                    <p className="mt-1 text-xl font-bold tabular-nums text-navy">
+                      {trajet.departure_mode === "HORAIRE_FIXE" ? formatTime(trajet.departure_datetime) : "Remplissage"}
+                    </p>
                   </div>
-                  <p className="mt-1 text-sm font-medium">
-                    {trajet.origin_city} → {trajet.destination_city}
-                  </p>
-                  <p className="mt-0.5 text-xs text-texte-doux">
-                    Bus {trajet.plate_number}
-                    {" · "}
-                    <span className={trajet.disponibles === 0 ? "text-alerte" : "text-succes"}>
-                      {trajet.disponibles} place(s) au quota guichet
-                    </span>
-                  </p>
-                </Link>
-              </li>
-            ))}
+                  <div className="min-w-0 md:flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-navy">{trajet.origin_city} <span className="text-accent">→</span> {trajet.destination_city}</p>
+                      <Badge tone={trajet.category === "VIP" ? "accent" : "neutre"}>{trajet.category}</Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-texte-doux">Bus {trajet.plate_number} · quota agence sécurisé</p>
+                  </div>
+                  <div className="md:min-w-36 md:text-right">
+                    <p className={`text-sm font-semibold ${trajet.disponibles === 0 ? "text-alerte" : "text-succes"}`}>{trajet.disponibles} place(s)</p>
+                    <p className="text-[11px] text-texte-doux">disponibles au guichet</p>
+                  </div>
+                  <span className={`inline-flex min-h-11 items-center justify-center rounded-[10px] px-4 text-sm font-bold ${resume ? "bg-accent text-white" : "bg-surface-alt text-texte-doux"}`}>
+                    {resume ? "Vendre" : "Caisse fermée"}
+                  </span>
+                </>
+              );
+              return (
+                <li key={trajet.id}>
+                  {resume ? (
+                    <Link href={`/guichet/vente/${trajet.id}`} className="grid gap-4 rounded-[12px] border border-bordure bg-surface p-4 transition hover:border-accent/50 hover:shadow-[0_8px_24px_rgba(8,22,45,0.06)] md:grid-cols-[auto_minmax(0,1fr)_auto_auto] md:items-center">{contenu}</Link>
+                  ) : (
+                    <div aria-disabled="true" className="grid gap-4 rounded-[12px] border border-bordure bg-surface p-4 opacity-60 md:grid-cols-[auto_minmax(0,1fr)_auto_auto] md:items-center">{contenu}</div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
         {!resume && (

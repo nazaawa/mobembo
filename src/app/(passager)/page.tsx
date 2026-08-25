@@ -15,23 +15,24 @@ export const dynamic = "force-dynamic";
  * FORM: Portail de billetterie opérationnel, direction imposée par les références utilisateur.
  */
 export default async function AccueilPassager() {
-  const villes = knownCities();
+  const villes = await knownCities();
   const aujourdhui = todayInKinshasa();
-  const axes = [
+  const axesCandidats = [
     ["Kinshasa", "Matadi"],
     ["Kinshasa", "Kikwit"],
     ["Matadi", "Kinshasa"],
-  ]
-    .filter(([origine, destination]) => villes.includes(origine) && villes.includes(destination))
-    .map(([origine, destination]) => ({
+  ].filter(([origine, destination]) => villes.includes(origine) && villes.includes(destination));
+  const axes = await Promise.all(
+    axesCandidats.map(async ([origine, destination]) => ({
       origine,
       destination,
-      trajets: searchTrips({ origin: origine, destination, day: aujourdhui }),
-    }));
+      trajets: await searchTrips({ origin: origine, destination, day: aujourdhui }),
+    })),
+  );
 
   return (
     <div>
-      <section className="relative -mt-6 mx-[calc(50%-50vw)] w-screen min-h-[460px] overflow-hidden bg-navy text-white sm:-mt-8 sm:min-h-[580px] lg:min-h-[660px]">
+      <section className="relative -mx-4 -mt-6 min-h-[460px] overflow-hidden bg-navy text-white sm:mx-0 sm:-mt-2 sm:min-h-[540px] sm:rounded-[22px] lg:min-h-[570px]">
         <Image
           src="/images/mobembo-terminal-hero.png"
           alt="Autocar interurbain prêt au départ dans un terminal congolais"
@@ -41,10 +42,13 @@ export default async function AccueilPassager() {
           className="animate-[hero-installation_1.1s_ease-out_both] object-cover object-[66%_center] sm:object-center"
         />
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,22,45,0.96)_0%,rgba(8,22,45,0.8)_40%,rgba(8,22,45,0.2)_78%,rgba(8,22,45,0.08)_100%)]" />
-        <div className="relative z-10 mx-auto flex min-h-[460px] max-w-7xl flex-col justify-center px-5 pb-24 pt-10 sm:min-h-[580px] sm:px-10 sm:pb-36 sm:pt-14 lg:min-h-[660px] lg:px-16">
+        <div className="relative z-10 mx-auto flex min-h-[460px] max-w-7xl flex-col justify-center px-5 pb-24 pt-10 sm:min-h-[540px] sm:px-10 sm:pb-32 sm:pt-14 lg:min-h-[570px] lg:px-14">
           <div className="max-w-[900px]">
-
-            <h1 className="max-w-[860px] animate-[leve-entree_0.6s_ease-out_both] font-heading text-[clamp(2.75rem,6.4vw,5rem)] font-bold leading-[0.98] tracking-[-0.02em] text-balance [animation-delay:90ms]">
+            <p className="mb-4 inline-flex animate-[leve-entree_0.6s_ease-out_both] items-center gap-2 rounded-[9px] border border-white/20 bg-navy/45 px-3 py-2 text-xs font-semibold text-white/85 backdrop-blur-sm">
+              <span className="h-2 w-2 rounded-full bg-accent-clair" aria-hidden />
+              Billetterie interurbaine · paiement Mobile Money
+            </p>
+            <h1 className="max-w-[790px] animate-[leve-entree_0.6s_ease-out_both] font-heading text-[clamp(2.65rem,5.8vw,4.6rem)] font-bold leading-[0.98] tracking-[-0.02em] text-balance [animation-delay:90ms]">
               Votre prochain départ commence ici.
             </h1>
             <p className="mt-5 max-w-[540px] animate-[leve-entree_0.6s_ease-out_both] text-base leading-7 text-white/78 sm:text-lg [animation-delay:170ms]">
@@ -54,7 +58,7 @@ export default async function AccueilPassager() {
         </div>
       </section>
 
-      <div className="relative z-20 mx-auto -mt-16 max-w-[1120px] animate-[leve-entree_0.7s_ease-out_both] px-3 sm:-mt-24 sm:px-6 [animation-delay:260ms]">
+      <div id="recherche" className="relative z-20 mx-auto -mt-16 max-w-[1120px] scroll-mt-28 animate-[leve-entree_0.7s_ease-out_both] px-3 sm:-mt-20 sm:px-6 [animation-delay:260ms]">
         <SearchForm villes={villes} defaultDate={aujourdhui} hero />
       </div>
 
@@ -118,7 +122,7 @@ export default async function AccueilPassager() {
         </section>
       )}
 
-      <section className="grid overflow-hidden rounded-[18px] bg-navy text-white lg:grid-cols-[1.15fr_0.85fr]">
+      <section id="comment-ca-marche" className="grid scroll-mt-28 overflow-hidden rounded-[18px] bg-navy text-white lg:grid-cols-[1.15fr_0.85fr]">
         <div className="p-7 sm:p-10 lg:p-14">
           <p className="text-sm font-semibold text-accent-clair">Simple du début à la fin</p>
           <h2 className="mt-2 max-w-xl font-heading text-3xl font-bold tracking-[-0.02em] sm:text-4xl">

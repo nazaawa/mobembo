@@ -30,7 +30,7 @@ export const POST = authed(
       clientTime?: string;
     }>(request);
 
-    const result = posSell({
+    const result = await posSell({
       tripId: input.tripId,
       seatNumbers: input.sieges,
       passengers: input.passagers,

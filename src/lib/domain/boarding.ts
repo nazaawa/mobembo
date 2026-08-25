@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { DbHandle } from "@/lib/db";
 import { getDb, tx } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
 import { nowIso, formatTime } from "@/lib/core/time";
@@ -43,12 +43,21 @@ export interface Manifest {
   totalValides: number;
 }
 
-export function buildManifest(tripId: string, db: Database = getDb()): Manifest {
-  const trip = tripDetail(tripId, db);
-  const company = getCompany(trip.company_id, db);
+export async function buildManifest(tripId: string, db: DbHandle = getDb()): Promise<Manifest> {
+  const trip = await tripDetail(tripId, db);
+  const company = await getCompany(trip.company_id, db);
 
-  const rows = db
-    .prepare(
+  const rows = await db
+    .prepare<{
+      id: string;
+      ticket_code: string;
+      passenger_name: string;
+      passenger_phone: string;
+      status: string;
+      seat_number: string;
+      scanned_at: string | null;
+      successeur: string | null;
+    }>(
       `SELECT t.id, t.ticket_code, t.passenger_name, t.passenger_phone, t.status,
               s.seat_number,
               (SELECT MAX(scanned_at) FROM boarding_scans bs
@@ -61,16 +70,7 @@ export function buildManifest(tripId: string, db: Database = getDb()): Manifest 
         WHERE t.trip_id = ?
         ORDER BY s.seat_number`,
     )
-    .all(tripId) as Array<{
-    id: string;
-    ticket_code: string;
-    passenger_name: string;
-    passenger_phone: string;
-    status: string;
-    seat_number: string;
-    scanned_at: string | null;
-    successeur: string | null;
-  }>;
+    .all(tripId);
 
   const entries: ManifestEntry[] = rows.map((row) => {
     const valide = ["EMIS", "EN_REVENTE", "EMBARQUE"].includes(row.status);
@@ -118,21 +118,21 @@ export type ScanOutcome =
  * synchronisation des scans hors-ligne. La vérification de signature est
  * identique à celle que le terminal fait localement.
  */
-export function scanTicket(params: {
+export async function scanTicket(params: {
   tripId: string;
   rawQr: string;
   scannedBy?: string | null;
   deviceId?: string | null;
   /** Horodatage du terminal — informatif, jamais décisionnel (§3.1). */
   clientTime?: string | null;
-}): ScanOutcome {
-  return tx((db) => {
-    const trip = getTrip(params.tripId, db);
-    const company = getCompany(trip.company_id, db);
+}): Promise<ScanOutcome> {
+  return tx(async (db) => {
+    const trip = await getTrip(params.tripId, db);
+    const company = await getCompany(trip.company_id, db);
 
     const verification = verifyQr(params.rawQr, [company.qr_secret, company.qr_secret_previous]);
     if (!verification.valid) {
-      recordScan(db, {
+      await recordScan(db, {
         ticketId: null,
         tripId: params.tripId,
         result: "REFUSE",
@@ -153,26 +153,26 @@ export function scanTicket(params: {
       return { result: "REFUSE" as const, motif: "Ce billet appartient à un autre voyage." };
     }
 
-    const ticket = db
-      .prepare(`SELECT * FROM tickets WHERE id = ?`)
-      .get(verification.payload.ticketId) as TicketRow | undefined;
+    const ticket = await db
+      .prepare<TicketRow>(`SELECT * FROM tickets WHERE id = ?`)
+      .get(verification.payload.ticketId);
     if (!ticket) return { result: "REFUSE" as const, motif: "Billet inconnu." };
 
-    const seat = db
-      .prepare(`SELECT seat_number FROM trip_seats WHERE id = ?`)
-      .get(ticket.trip_seat_id) as { seat_number: string };
+    const seat = (await db
+      .prepare<{ seat_number: string }>(`SELECT seat_number FROM trip_seats WHERE id = ?`)
+      .get(ticket.trip_seat_id)) as { seat_number: string };
 
     // §2.7 : « Un billet annulé pour revente figure au manifeste avec un statut
     // invalide explicite : le contrôleur voit pourquoi le QR est refusé et à
     // qui appartient désormais le siège. »
     if (ticket.status === "ANNULE_REVENDU" || ticket.status === "TRANSFERE") {
-      const successor = db
-        .prepare(
+      const successor = await db
+        .prepare<{ passenger_name: string; ticket_code: string }>(
           `SELECT passenger_name, ticket_code FROM tickets
             WHERE parent_ticket_id = ? AND status IN ('EMIS','EMBARQUE') LIMIT 1`,
         )
-        .get(ticket.id) as { passenger_name: string; ticket_code: string } | undefined;
-      recordScan(db, {
+        .get(ticket.id);
+      await recordScan(db, {
         ticketId: ticket.id,
         tripId: params.tripId,
         result: "REFUSE",
@@ -194,7 +194,7 @@ export function scanTicket(params: {
     }
 
     if (["ANNULE", "EXPIRE"].includes(ticket.status)) {
-      recordScan(db, {
+      await recordScan(db, {
         ticketId: ticket.id,
         tripId: params.tripId,
         result: "REFUSE",
@@ -210,14 +210,14 @@ export function scanTicket(params: {
 
     // §2.7 anti-rejeu : « Un second scan affiche un avertissement rouge
     // "DÉJÀ SCANNÉ à HH:MM". »
-    const first = db
-      .prepare(
+    const first = await db
+      .prepare<{ scanned_at: string }>(
         `SELECT scanned_at FROM boarding_scans
           WHERE ticket_id = ? AND result = 'ACCEPTE' ORDER BY scanned_at LIMIT 1`,
       )
-      .get(ticket.id) as { scanned_at: string } | undefined;
+      .get(ticket.id);
     if (first) {
-      recordScan(db, {
+      await recordScan(db, {
         ticketId: ticket.id,
         tripId: params.tripId,
         result: "DEJA_SCANNE",
@@ -239,15 +239,16 @@ export function scanTicket(params: {
       return { result: "REFUSE" as const, motif: "Manifeste clôturé : embarquement terminé." };
     }
 
-    db.prepare(`UPDATE tickets SET status = 'EMBARQUE', updated_at = ? WHERE id = ?`).run(
-      nowIso(),
-      ticket.id,
-    );
-    db.prepare(`UPDATE trip_seats SET status = 'EMBARQUE' WHERE id = ?`).run(ticket.trip_seat_id);
-    db.prepare(
-      `UPDATE resale_listings SET status = 'RETIREE' WHERE ticket_id = ? AND status = 'ACTIVE'`,
-    ).run(ticket.id);
-    recordScan(db, {
+    await db
+      .prepare(`UPDATE tickets SET status = 'EMBARQUE', updated_at = ? WHERE id = ?`)
+      .run(nowIso(), ticket.id);
+    await db
+      .prepare(`UPDATE trip_seats SET status = 'EMBARQUE' WHERE id = ?`)
+      .run(ticket.trip_seat_id);
+    await db
+      .prepare(`UPDATE resale_listings SET status = 'RETIREE' WHERE ticket_id = ? AND status = 'ACTIVE'`)
+      .run(ticket.id);
+    await recordScan(db, {
       ticketId: ticket.id,
       tripId: params.tripId,
       result: "ACCEPTE",
@@ -258,15 +259,15 @@ export function scanTicket(params: {
 
     return {
       result: "ACCEPTE" as const,
-      ticket: getTicket(ticket.id, db),
+      ticket: await getTicket(ticket.id, db),
       seat: seat.seat_number,
       passager: ticket.passenger_name,
     };
   });
 }
 
-function recordScan(
-  db: Database,
+async function recordScan(
+  db: DbHandle,
   params: {
     ticketId: string | null;
     tripId: string;
@@ -275,23 +276,25 @@ function recordScan(
     deviceId?: string | null;
     clientTime?: string | null;
   },
-): void {
+): Promise<void> {
   if (!params.ticketId) return;
-  db.prepare(
-    `INSERT INTO boarding_scans
+  await db
+    .prepare(
+      `INSERT INTO boarding_scans
        (id, ticket_id, trip_id, scanned_by, scanned_at, device_id, result, synced_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    newId("bsc"),
-    params.ticketId,
-    params.tripId,
-    params.scannedBy ?? null,
-    // L'heure serveur fait foi ; l'heure du terminal est conservée en note.
-    nowIso(),
-    params.deviceId ?? null,
-    params.result,
-    nowIso(),
-  );
+    )
+    .run(
+      newId("bsc"),
+      params.ticketId,
+      params.tripId,
+      params.scannedBy ?? null,
+      // L'heure serveur fait foi ; l'heure du terminal est conservée en note.
+      nowIso(),
+      params.deviceId ?? null,
+      params.result,
+      nowIso(),
+    );
 }
 
 /**
@@ -299,12 +302,12 @@ function recordScan(
  * no-shows, taux de remplissage réel. » Les scans arrivent par lot, chacun
  * idempotent par `clientOpId`.
  */
-export function syncScans(params: {
+export async function syncScans(params: {
   tripId: string;
   deviceId: string;
   scans: Array<{ clientOpId: string; rawQr: string; clientTime: string }>;
   scannedBy?: string | null;
-}): Array<{ clientOpId: string; outcome: ScanOutcome | { result: "DEJA_SYNCHRONISE" } }> {
+}): Promise<Array<{ clientOpId: string; outcome: ScanOutcome | { result: "DEJA_SYNCHRONISE" } }>> {
   const db = getDb();
   const results: Array<{
     clientOpId: string;
@@ -312,15 +315,15 @@ export function syncScans(params: {
   }> = [];
 
   for (const scan of params.scans) {
-    const seen = db
-      .prepare(`SELECT id FROM sync_log WHERE client_op_id = ?`)
-      .get(scan.clientOpId) as { id: string } | undefined;
+    const seen = await db
+      .prepare<{ id: string }>(`SELECT id FROM sync_log WHERE client_op_id = ?`)
+      .get(scan.clientOpId);
     if (seen) {
       results.push({ clientOpId: scan.clientOpId, outcome: { result: "DEJA_SYNCHRONISE" } });
       continue;
     }
 
-    const outcome = scanTicket({
+    const outcome = await scanTicket({
       tripId: params.tripId,
       rawQr: scan.rawQr,
       scannedBy: params.scannedBy,
@@ -328,19 +331,21 @@ export function syncScans(params: {
       clientTime: scan.clientTime,
     });
 
-    db.prepare(
-      `INSERT INTO sync_log
+    await db
+      .prepare(
+        `INSERT INTO sync_log
          (id, device_id, client_op_id, kind, payload_json, result, client_time, server_time)
        VALUES (?, ?, ?, 'SCAN_EMBARQUEMENT', ?, ?, ?, ?)`,
-    ).run(
-      newId("syn"),
-      params.deviceId,
-      scan.clientOpId,
-      JSON.stringify({ tripId: params.tripId }),
-      outcome.result,
-      scan.clientTime,
-      nowIso(),
-    );
+      )
+      .run(
+        newId("syn"),
+        params.deviceId,
+        scan.clientOpId,
+        JSON.stringify({ tripId: params.tripId }),
+        outcome.result,
+        scan.clientTime,
+        nowIso(),
+      );
     results.push({ clientOpId: scan.clientOpId, outcome });
   }
   return results;
@@ -350,21 +355,20 @@ export function syncScans(params: {
  * §2.9 : « Un billet passe à EXPIRE si et seulement si le trajet est marqué
  * parti et qu'aucun scan n'est enregistré. Le départ effectif fait foi. »
  */
-export function markDeparted(params: {
+export async function markDeparted(params: {
   tripId: string;
   actor: { userId: string; role: string; companyId?: string | null };
-}): { departedAt: string } {
-  return tx((db) => {
-    const trip = getTrip(params.tripId, db);
+}): Promise<{ departedAt: string }> {
+  return tx(async (db) => {
+    const trip = await getTrip(params.tripId, db);
     if (trip.departed_at) {
       throw errors.conflict("DEPART_DEJA_ENREGISTRE", "Le départ effectif est déjà enregistré.");
     }
     const departedAt = nowIso();
-    db.prepare(`UPDATE trips SET status = 'PARTI', departed_at = ? WHERE id = ?`).run(
-      departedAt,
-      params.tripId,
-    );
-    audit(
+    await db
+      .prepare(`UPDATE trips SET status = 'PARTI', departed_at = ? WHERE id = ?`)
+      .run(departedAt, params.tripId);
+    await audit(
       {
         userId: params.actor.userId,
         role: params.actor.role,
@@ -382,12 +386,12 @@ export function markDeparted(params: {
 }
 
 /** Clôture manuelle du manifeste : les no-shows sont alors constatés. */
-export function closeManifest(params: {
+export async function closeManifest(params: {
   tripId: string;
   actor: { userId: string; role: string; companyId?: string | null };
-}): { noShows: number; embarques: number; tauxRemplissage: number } {
-  return tx((db) => {
-    const trip = getTrip(params.tripId, db);
+}): Promise<{ noShows: number; embarques: number; tauxRemplissage: number }> {
+  return tx(async (db) => {
+    const trip = await getTrip(params.tripId, db);
     if (!trip.departed_at) {
       throw errors.conflict(
         "TRAJET_NON_PARTI",
@@ -398,21 +402,20 @@ export function closeManifest(params: {
       throw errors.conflict("MANIFESTE_CLOS", "Ce manifeste est déjà clôturé.");
     }
 
-    db.prepare(`UPDATE trips SET manifest_closed_at = ?, status = 'CLOTURE' WHERE id = ?`).run(
-      nowIso(),
-      params.tripId,
-    );
-    const noShows = expireNoShows(params.tripId, db);
+    await db
+      .prepare(`UPDATE trips SET manifest_closed_at = ?, status = 'CLOTURE' WHERE id = ?`)
+      .run(nowIso(), params.tripId);
+    const noShows = await expireNoShows(params.tripId, db);
 
-    const counts = db
-      .prepare(
+    const counts = (await db
+      .prepare<{ embarques: number; sieges: number }>(
         `SELECT
            (SELECT COUNT(*) FROM tickets WHERE trip_id = ? AND status = 'EMBARQUE') AS embarques,
            (SELECT COUNT(*) FROM trip_seats WHERE trip_id = ?) AS sieges`,
       )
-      .get(params.tripId, params.tripId) as { embarques: number; sieges: number };
+      .get(params.tripId, params.tripId)) as { embarques: number; sieges: number };
 
-    audit(
+    await audit(
       {
         userId: params.actor.userId,
         role: params.actor.role,

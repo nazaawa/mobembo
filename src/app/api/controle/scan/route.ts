@@ -14,7 +14,7 @@ export const POST = authed(
       clientTime?: string;
     }>(request);
 
-    return scanTicket({
+    return await scanTicket({
       tripId,
       rawQr: qr,
       scannedBy: session.userId,

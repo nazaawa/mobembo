@@ -39,9 +39,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ erreur: "SIGNATURE_INVALIDE" }, { status: 401 });
   }
 
-  const payment = getDb()
-    .prepare(`SELECT * FROM payments WHERE provider_ref = ? OR idempotency_key = ?`)
-    .get(event.reference, event.reference) as PaymentRow | undefined;
+  const payment = await getDb()
+    .prepare<PaymentRow>(`SELECT * FROM payments WHERE provider_ref = ? OR idempotency_key = ?`)
+    .get(event.reference, event.reference);
   // Un webhook pour un paiement inconnu reçoit 200 : l'opérateur ne doit pas
   // le rejouer indéfiniment, et l'écart sortira à la réconciliation (§3.2).
   if (!payment) {

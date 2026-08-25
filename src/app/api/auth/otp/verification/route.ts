@@ -6,9 +6,12 @@ import { sealSession, readSession, SESSION_COOKIE } from "@/lib/auth/session";
 /** POST /api/auth/otp/verification — valide le code et ouvre la session passager. */
 export const POST = handler(async ({ request, ip, device }) => {
   const input = await body<{ phone: string; code: string; name?: string }>(request);
-  const { sessionId, created } = verifyOtp({ ...input, ip, device });
+  const { sessionId, created } = await verifyOtp({ ...input, ip, device });
 
-  const response = NextResponse.json({ session: readSession(sessionId), compteCree: created });
+  const response = NextResponse.json({
+    session: await readSession(sessionId),
+    compteCree: created,
+  });
   response.cookies.set(SESSION_COOKIE, sealSession(sessionId), {
     httpOnly: true,
     sameSite: "lax",

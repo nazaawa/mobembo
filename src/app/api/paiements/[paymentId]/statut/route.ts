@@ -12,9 +12,9 @@ export const GET = handlerWith<{ paymentId: string }>(async ({ params }) => {
   const payment = await pollPayment(params.paymentId);
   const billets =
     payment.status === "CONFIRME"
-      ? (getDb()
-          .prepare(`SELECT * FROM tickets WHERE booking_id = ?`)
-          .all(payment.booking_id) as TicketRow[])
+      ? await getDb()
+          .prepare<TicketRow>(`SELECT * FROM tickets WHERE booking_id = ?`)
+          .all(payment.booking_id)
       : [];
   return { paiement: payment, billets };
 });

@@ -8,6 +8,18 @@ import { ManifestesEnCache } from "./cache";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * L'heure courante est lue hors du corps du composant : un rendu doit rester
+ * pur (§ règles React), et Date.now() ne l'est pas.
+ */
+async function fenetre(): Promise<{ debut: string; fin: string }> {
+  const maintenant = Date.now();
+  return {
+    debut: new Date(maintenant - 12 * 3_600_000).toISOString(),
+    fin: new Date(maintenant + 24 * 3_600_000).toISOString(),
+  };
+}
+
 interface LigneTrajet {
   id: string;
   departure_datetime: string;
@@ -25,8 +37,12 @@ export default async function AccueilControle() {
     redirect("/guichet/connexion");
   }
 
-  const trajets = getDb()
-    .prepare(
+  // Les horodatages sont des chaînes ISO 8601 : la fenêtre "-12h / +24h" est
+  // calculée côté JS et liée en paramètre plutôt qu'avec datetime('now', …),
+  // fonction SQLite absente de MySQL.
+  const { debut: fenetreDebut, fin: fenetreFin } = await fenetre();
+  const trajets = await getDb()
+    .prepare<LigneTrajet>(
       `SELECT t.id, t.departure_datetime, t.status, r.origin_city, r.destination_city,
               b.plate_number,
               (SELECT COUNT(*) FROM tickets k WHERE k.trip_id = t.id
@@ -37,10 +53,10 @@ export default async function AccueilControle() {
          JOIN buses b ON b.id = t.bus_id
         WHERE t.company_id = ?
           AND t.status IN ('PLANIFIE','EN_VENTE','PARTI')
-          AND t.departure_datetime BETWEEN datetime('now','-12 hours') AND datetime('now','+24 hours')
+          AND t.departure_datetime BETWEEN ? AND ?
         ORDER BY t.departure_datetime`,
     )
-    .all(session.companyId) as LigneTrajet[];
+    .all(session.companyId, fenetreDebut, fenetreFin);
 
   return (
     <div className="space-y-5">

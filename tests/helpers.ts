@@ -24,80 +24,85 @@ export interface Fixture {
 }
 
 /** Repart d'une base vide pour chaque test : aucun état partagé. */
-export function seedFixture(options?: {
+export async function seedFixture(options?: {
   departureInHours?: number;
   quotas?: Record<Channel, number>;
   policy?: Partial<CompanyPolicy>;
-}): Fixture {
-  // Refuse de tourner sur autre chose qu'une base en mémoire : `resetDb()`
-  // vide toutes les tables, et se tromper de cible coûterait la base réelle.
+}): Promise<Fixture> {
+  // Refuse de tourner sur autre chose qu'une base de test : `resetDb()` vide
+  // toutes les tables, et se tromper de cible coûterait la base réelle.
   assertBaseDeTest();
-  resetDb();
-  const db = getDb();
+  await resetDb();
   const now = nowIso();
   const companyId = newId("cmp");
 
-  tx((t) => {
-    t.prepare(
-      `INSERT INTO companies
+  await tx(async (t) => {
+    await t
+      .prepare(
+        `INSERT INTO companies
          (id, name, status, commission_rate, currency_rate_usd_cdf, currency_rate_at,
           qr_secret, policy_json, created_at)
        VALUES (?, 'Compagnie Test', 'ACTIVE', 0.06, 2850, ?, ?, ?, ?)`,
-    ).run(
-      companyId,
-      now,
-      randomBytes(32).toString("hex"),
-      JSON.stringify({ ...DEFAULT_POLICY, ...options?.policy }),
-      now,
-    );
+      )
+      .run(
+        companyId,
+        now,
+        randomBytes(32).toString("hex"),
+        JSON.stringify({ ...DEFAULT_POLICY, ...options?.policy }),
+        now,
+      );
   });
 
   const agencyId = newId("agc");
   const agency2Id = newId("agc");
-  tx((t) => {
+  await tx(async (t) => {
     const insert = t.prepare(
       `INSERT INTO agencies
          (id, company_id, name, city, address, status, ticket_sequence, created_at)
        VALUES (?, ?, ?, ?, '—', 'ACTIVE', 0, ?)`,
     );
-    insert.run(agencyId, companyId, "Gare Test", "Kinshasa", now);
-    insert.run(agency2Id, companyId, "Agence Aval", "Matadi", now);
+    await insert.run(agencyId, companyId, "Gare Test", "Kinshasa", now);
+    await insert.run(agency2Id, companyId, "Agence Aval", "Matadi", now);
   });
 
-  const makeUser = (name: string, role: string, agency: string | null): string => {
+  const makeUser = async (name: string, role: string, agency: string | null): Promise<string> => {
     const id = newId("usr");
-    tx((t) => {
-      t.prepare(
-        `INSERT INTO users (id, phone, name, password_hash, status, locale, created_at)
+    await tx(async (t) => {
+      await t
+        .prepare(
+          `INSERT INTO users (id, phone, name, password_hash, status, locale, created_at)
          VALUES (?, ?, ?, ?, 'ACTIVE', 'fr', ?)`,
-      ).run(id, `+2438${id.slice(-8)}`, name, hashPassword("motdepasse"), now);
-      t.prepare(
-        `INSERT INTO user_roles (id, user_id, role, company_id, agency_id, created_at)
+        )
+        .run(id, `+2438${id.slice(-8)}`, name, hashPassword("motdepasse"), now);
+      await t
+        .prepare(
+          `INSERT INTO user_roles (id, user_id, role, company_id, agency_id, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
-      ).run(newId("url"), id, role, companyId, agency, now);
+        )
+        .run(newId("url"), id, role, companyId, agency, now);
     });
     return id;
   };
 
-  const guichetierId = makeUser("Guichetier A", "GUICHETIER", agencyId);
-  const guichetier2Id = makeUser("Guichetier B", "GUICHETIER", agencyId);
-  const gerantId = makeUser("Gérant", "GERANT_AGENCE", agencyId);
-  const controleurId = makeUser("Contrôleur", "CONTROLEUR", agencyId);
+  const guichetierId = await makeUser("Guichetier A", "GUICHETIER", agencyId);
+  const guichetier2Id = await makeUser("Guichetier B", "GUICHETIER", agencyId);
+  const gerantId = await makeUser("Gérant", "GERANT_AGENCE", agencyId);
+  const controleurId = await makeUser("Contrôleur", "CONTROLEUR", agencyId);
 
-  const seatMap = createSeatMap({
+  const seatMap = await createSeatMap({
     companyId,
     name: "Test 2+2",
     rows: 15,
     layout: LAYOUT_PRESETS["2+2"],
     disabledSeats: [],
   });
-  const bus = createBus({
+  const bus = await createBus({
     companyId,
     plateNumber: "TEST 0001",
     seatMapId: seatMap.id,
     category: "STANDARD",
   });
-  const route = createRoute({
+  const route = await createRoute({
     companyId,
     originCity: "Kinshasa",
     destinationCity: "Matadi",
@@ -110,7 +115,7 @@ export function seedFixture(options?: {
   ).toISOString();
   const priceUsd = toMinor(15);
 
-  const trip = createTrip({
+  const trip = await createTrip({
     companyId,
     routeId: route.id,
     busId: bus.id,
@@ -121,7 +126,6 @@ export function seedFixture(options?: {
     quotas: options?.quotas ?? { GUICHET: 35, EN_LIGNE: 20, RESERVE_COMPAGNIE: 5 },
   });
 
-  void db;
   return {
     companyId,
     agencyId,
@@ -137,16 +141,15 @@ export function seedFixture(options?: {
   };
 }
 
-export function seatsOfChannel(tripId: string, channel: Channel, limit = 5): string[] {
-  return (
-    getDb()
-      .prepare(
-        `SELECT seat_number FROM trip_seats
+export async function seatsOfChannel(tripId: string, channel: Channel, limit = 5): Promise<string[]> {
+  const rows = await getDb()
+    .prepare<{ seat_number: string }>(
+      `SELECT seat_number FROM trip_seats
           WHERE trip_id = ? AND channel = ? AND status = 'DISPONIBLE'
           ORDER BY seat_number LIMIT ?`,
-      )
-      .all(tripId, channel, limit) as { seat_number: string }[]
-  ).map((r) => r.seat_number);
+    )
+    .all(tripId, channel, limit);
+  return rows.map((r) => r.seat_number);
 }
 
 export function actorGuichetier(fixture: Fixture, userId?: string) {

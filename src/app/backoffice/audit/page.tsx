@@ -40,33 +40,31 @@ export default async function JournalAudit(props: PageProps<"/backoffice/audit">
   const filtreAction = typeof params.action === "string" ? params.action : "";
 
   const db = getDb();
-  const entrees = (
-    filtreAction
-      ? db
-          .prepare(
-            `SELECT a.*, u.name AS utilisateur FROM audit_log a
+  const entrees = filtreAction
+    ? await db
+        .prepare<Entree>(
+          `SELECT a.*, u.name AS utilisateur FROM audit_log a
              LEFT JOIN users u ON u.id = a.user_id
              WHERE (a.company_id = ? OR a.company_id IS NULL) AND a.action = ?
              ORDER BY a.created_at DESC LIMIT 300`,
-          )
-          .all(session!.companyId, filtreAction)
-      : db
-          .prepare(
-            `SELECT a.*, u.name AS utilisateur FROM audit_log a
+        )
+        .all(session!.companyId, filtreAction)
+    : await db
+        .prepare<Entree>(
+          `SELECT a.*, u.name AS utilisateur FROM audit_log a
              LEFT JOIN users u ON u.id = a.user_id
              WHERE (a.company_id = ? OR a.company_id IS NULL)
              ORDER BY a.created_at DESC LIMIT 300`,
-          )
-          .all(session!.companyId)
-  ) as Entree[];
+        )
+        .all(session!.companyId);
 
-  const actions = db
+  const actions = (await db
     .prepare(
       `SELECT action, COUNT(*) AS n FROM audit_log
         WHERE company_id = ? OR company_id IS NULL
         GROUP BY action ORDER BY n DESC`,
     )
-    .all(session!.companyId) as Array<{ action: string; n: number }>;
+    .all(session!.companyId)) as Array<{ action: string; n: number }>;
 
   const exportUrl = `/api/backoffice/audit?format=csv${filtreAction ? `&action=${filtreAction}` : ""}`;
 

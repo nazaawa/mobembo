@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { DbHandle } from "@/lib/db";
 import { getDb, tx } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
 import { nowIso, hoursUntil, formatDateTime } from "@/lib/core/time";
@@ -45,13 +45,13 @@ export interface ResaleEligibility {
  * §2.6 Éligibilité : « billet émis, payé, départ à plus de 4 heures, passager
  * non embarqué ». Plus le garde-fou anti-revendeur et l'unicité de revente.
  */
-export function checkResaleEligibility(
+export async function checkResaleEligibility(
   ticketId: string,
-  db: Database = getDb(),
-): ResaleEligibility {
-  const ticket = getTicket(ticketId, db);
-  const trip = getTrip(ticket.trip_id, db);
-  const company = getCompany(trip.company_id, db);
+  db: DbHandle = getDb(),
+): Promise<ResaleEligibility> {
+  const ticket = await getTicket(ticketId, db);
+  const trip = await getTrip(ticket.trip_id, db);
+  const company = await getCompany(trip.company_id, db);
   const policy = companyPolicy(company);
 
   if (ticket.status === "EN_REVENTE") return { eligible: false, raison: "Ce billet est déjà en revente." };
@@ -73,13 +73,13 @@ export function checkResaleEligibility(
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
-  const count = db
-    .prepare(
+  const count = await db
+    .prepare<{ n: number }>(
       `SELECT COUNT(*) AS n FROM resale_listings
         WHERE seller_phone = ? AND listed_at >= ? AND status IN ('ACTIVE','VENDUE')`,
     )
-    .get(ticket.passenger_phone, monthStart.toISOString()) as { n: number };
-  if (count.n >= policy.resaleMaxPerPhonePerMonth) {
+    .get(ticket.passenger_phone, monthStart.toISOString());
+  if ((count?.n ?? 0) >= policy.resaleMaxPerPhonePerMonth) {
     // « Bloque les revendeurs professionnels. »
     return {
       eligible: false,
@@ -104,51 +104,52 @@ export function checkResaleEligibility(
 }
 
 /** §2.6 étape 1 : « Vendeur active "remettre en vente" → EMIS → EN_REVENTE ». */
-export function listForResale(params: {
+export async function listForResale(params: {
   ticketId: string;
   actorPhone: string;
-}): ResaleListingRow {
-  return tx((db) => {
-    const ticket = getTicket(params.ticketId, db);
+}): Promise<ResaleListingRow> {
+  return tx(async (db) => {
+    const ticket = await getTicket(params.ticketId, db);
     if (ticket.passenger_phone !== params.actorPhone) {
       throw errors.forbidden("Ce billet n'est pas au nom de ce numéro.");
     }
-    const eligibility = checkResaleEligibility(params.ticketId, db);
+    const eligibility = await checkResaleEligibility(params.ticketId, db);
     if (!eligibility.eligible) throw errors.conflict("REVENTE_NON_ELIGIBLE", eligibility.raison!);
 
-    const trip = getTrip(ticket.trip_id, db);
-    const policy = companyPolicy(getCompany(trip.company_id, db));
+    const trip = await getTrip(ticket.trip_id, db);
+    const policy = companyPolicy(await getCompany(trip.company_id, db));
     const expiresAt = new Date(
       new Date(trip.departure_datetime).getTime() - policy.resaleDeadlineHours * 3_600_000,
     ).toISOString();
 
     const id = newId("rsl");
-    db.prepare(
-      `INSERT INTO resale_listings
+    await db
+      .prepare(
+        `INSERT INTO resale_listings
          (id, ticket_id, trip_id, seller_phone, price_amount, price_currency,
           listed_at, expires_at, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`,
-    ).run(
-      id,
-      ticket.id,
-      ticket.trip_id,
-      ticket.passenger_phone,
-      // « Le prix de revente est celui de l'achat original. Aucune fixation
-      // libre du prix. » Le paramètre n'existe pas dans la signature.
-      ticket.price_amount,
-      ticket.price_currency,
-      nowIso(),
-      expiresAt,
-    );
+      )
+      .run(
+        id,
+        ticket.id,
+        ticket.trip_id,
+        ticket.passenger_phone,
+        // « Le prix de revente est celui de l'achat original. Aucune fixation
+        // libre du prix. » Le paramètre n'existe pas dans la signature.
+        ticket.price_amount,
+        ticket.price_currency,
+        nowIso(),
+        expiresAt,
+      );
 
-    db.prepare(`UPDATE tickets SET status = 'EN_REVENTE', updated_at = ? WHERE id = ?`).run(
-      nowIso(),
-      ticket.id,
-    );
+    await db
+      .prepare(`UPDATE tickets SET status = 'EN_REVENTE', updated_at = ? WHERE id = ?`)
+      .run(nowIso(), ticket.id);
     // Le siège reste VENDU : « Il ne retourne jamais au stock disponible.
     // C'est ce qui empêche la double vente. » (§2.6)
 
-    audit(
+    await audit(
       {
         action: "MISE_EN_REVENTE",
         entity: "ticket",
@@ -158,26 +159,27 @@ export function listForResale(params: {
       },
       db,
     );
-    return db.prepare(`SELECT * FROM resale_listings WHERE id = ?`).get(id) as ResaleListingRow;
+    return (await db
+      .prepare<ResaleListingRow>(`SELECT * FROM resale_listings WHERE id = ?`)
+      .get(id)) as ResaleListingRow;
   });
 }
 
 /** Retrait volontaire : le billet redevient EMIS, son titulaire n'a rien perdu. */
-export function withdrawResale(ticketId: string, actorPhone: string): TicketRow {
-  return tx((db) => {
-    const ticket = getTicket(ticketId, db);
+export async function withdrawResale(ticketId: string, actorPhone: string): Promise<TicketRow> {
+  return tx(async (db) => {
+    const ticket = await getTicket(ticketId, db);
     if (ticket.passenger_phone !== actorPhone) throw errors.forbidden("Billet d'un autre numéro.");
     if (ticket.status !== "EN_REVENTE") {
       throw errors.conflict("BILLET_NON_EN_REVENTE", "Ce billet n'est pas en revente.");
     }
-    db.prepare(
-      `UPDATE resale_listings SET status = 'RETIREE' WHERE ticket_id = ? AND status = 'ACTIVE'`,
-    ).run(ticketId);
-    db.prepare(`UPDATE tickets SET status = 'EMIS', updated_at = ? WHERE id = ?`).run(
-      nowIso(),
-      ticketId,
-    );
-    audit({ action: "RETRAIT_REVENTE", entity: "ticket", entityId: ticketId }, db);
+    await db
+      .prepare(`UPDATE resale_listings SET status = 'RETIREE' WHERE ticket_id = ? AND status = 'ACTIVE'`)
+      .run(ticketId);
+    await db
+      .prepare(`UPDATE tickets SET status = 'EMIS', updated_at = ? WHERE id = ?`)
+      .run(nowIso(), ticketId);
+    await audit({ action: "RETRAIT_REVENTE", entity: "ticket", entityId: ticketId }, db);
     return getTicket(ticketId, db);
   });
 }
@@ -186,15 +188,17 @@ export function withdrawResale(ticketId: string, actorPhone: string): TicketRow 
  * §2.6 : « Aucun acheteur avant la limite : le billet redevient émis et reste
  * valide pour son titulaire d'origine. Il n'a rien perdu. »
  */
-export function expireStaleListings(db: Database = getDb()): number {
-  const expired = db
-    .prepare(`SELECT * FROM resale_listings WHERE status = 'ACTIVE' AND expires_at <= ?`)
-    .all(nowIso()) as ResaleListingRow[];
+export async function expireStaleListings(db: DbHandle = getDb()): Promise<number> {
+  const expired = await db
+    .prepare<ResaleListingRow>(`SELECT * FROM resale_listings WHERE status = 'ACTIVE' AND expires_at <= ?`)
+    .all(nowIso());
   for (const listing of expired) {
-    db.prepare(`UPDATE resale_listings SET status = 'EXPIREE' WHERE id = ?`).run(listing.id);
-    db.prepare(
-      `UPDATE tickets SET status = 'EMIS', updated_at = ? WHERE id = ? AND status = 'EN_REVENTE'`,
-    ).run(nowIso(), listing.ticket_id);
+    await db.prepare(`UPDATE resale_listings SET status = 'EXPIREE' WHERE id = ?`).run(listing.id);
+    await db
+      .prepare(
+        `UPDATE tickets SET status = 'EMIS', updated_at = ? WHERE id = ? AND status = 'EN_REVENTE'`,
+      )
+      .run(nowIso(), listing.ticket_id);
   }
   return expired.length;
 }
@@ -205,10 +209,10 @@ export interface ResaleOffer {
 }
 
 /** Sièges remis en vente sur un trajet — badge « remis en vente » (§2.6). */
-export function activeListings(tripId: string, db: Database = getDb()): ResaleOffer[] {
-  expireStaleListings(db);
-  return db
-    .prepare(
+export async function activeListings(tripId: string, db: DbHandle = getDb()): Promise<ResaleOffer[]> {
+  await expireStaleListings(db);
+  const rows = await db
+    .prepare<ResaleListingRow & { seatNumber: string }>(
       `SELECT l.*, s.seat_number AS seatNumber
          FROM resale_listings l
          JOIN tickets t ON t.id = l.ticket_id
@@ -216,11 +220,11 @@ export function activeListings(tripId: string, db: Database = getDb()): ResaleOf
         WHERE l.trip_id = ? AND l.status = 'ACTIVE'
         ORDER BY s.seat_number`,
     )
-    .all(tripId)
-    .map((row) => {
-      const { seatNumber, ...listing } = row as ResaleListingRow & { seatNumber: string };
-      return { listing, seatNumber };
-    });
+    .all(tripId);
+  return rows.map((row) => {
+    const { seatNumber, ...listing } = row;
+    return { listing, seatNumber };
+  });
 }
 
 /**
@@ -231,18 +235,29 @@ export function activeListings(tripId: string, db: Database = getDb()): ResaleOf
  *
  * Le paiement de l'acheteur est déjà confirmé quand cette fonction s'exécute :
  * elle ne fait que basculer la propriété du siège.
+ *
+ * Concurrence MySQL : sous SQLite, le verrou d'écriture global de la
+ * transaction IMMEDIATE empêchait deux acheteurs de passer en même temps sur
+ * la même annonce. Sous MySQL, deux transactions concurrentes peuvent lire la
+ * même annonce ACTIVE avant qu'aucune n'ait écrit. La lecture initiale de
+ * l'annonce se fait donc désormais avec `FOR UPDATE` : un second acheteur qui
+ * cible la même annonce attend que la première transaction se termine, puis
+ * relit un statut à jour (déjà VENDUE) et échoue proprement au lieu de
+ * dérouler tout le scénario avec des données périmées. La mise à jour finale
+ * vers VENDUE re-vérifie en plus `status = 'ACTIVE'` et le nombre de lignes
+ * affectées, en filet de sécurité indépendant du bon usage de FOR UPDATE.
  */
-export function completeResale(params: {
+export async function completeResale(params: {
   listingId: string;
   buyerName: string;
   buyerPhone: string;
   /** Réservation de l'acheteur, déjà payée. */
   bookingId: string;
-}): { ancien: TicketRow; nouveau: TicketRow; commission: number; remboursementVendeur: number } {
-  const outcome = tx((db) => {
-    const listing = db
-      .prepare(`SELECT * FROM resale_listings WHERE id = ?`)
-      .get(params.listingId) as ResaleListingRow | undefined;
+}): Promise<{ ancien: TicketRow; nouveau: TicketRow; commission: number; remboursementVendeur: number }> {
+  const outcome = await tx(async (db) => {
+    const listing = await db
+      .prepare<ResaleListingRow>(`SELECT * FROM resale_listings WHERE id = ? FOR UPDATE`)
+      .get(params.listingId);
     if (!listing) throw errors.notFound("Annonce de revente");
     // Deux acheteurs sur le même siège remis en vente : le second trouve
     // l'annonce déjà VENDUE et repart avec un remboursement (§5.2).
@@ -250,27 +265,31 @@ export function completeResale(params: {
       throw errors.conflict("ANNONCE_INDISPONIBLE", "Ce siège vient d'être vendu à un autre acheteur.");
     }
 
-    const oldTicket = getTicket(listing.ticket_id, db);
+    const oldTicket = await getTicket(listing.ticket_id, db);
     if (oldTicket.status !== "EN_REVENTE") {
       throw errors.conflict("BILLET_NON_EN_REVENTE", "Le billet n'est plus en revente.");
     }
 
-    const trip = getTrip(listing.trip_id, db);
-    const company = getCompany(trip.company_id, db);
+    const trip = await getTrip(listing.trip_id, db);
+    const company = await getCompany(trip.company_id, db);
     const policy = companyPolicy(company);
-    const seat = db
-      .prepare(`SELECT id, seat_number FROM trip_seats WHERE id = ?`)
-      .get(oldTicket.trip_seat_id) as { id: string; seat_number: string };
+    const seat = (await db
+      .prepare<{ id: string; seat_number: string }>(
+        `SELECT id, seat_number FROM trip_seats WHERE id = ?`,
+      )
+      .get(oldTicket.trip_seat_id)) as { id: string; seat_number: string };
 
     // a) Ancien billet invalidé — son QR ne vaut plus rien.
-    db.prepare(
-      `UPDATE tickets SET status = 'ANNULE_REVENDU', resold_count = resold_count + 1, updated_at = ?
+    await db
+      .prepare(
+        `UPDATE tickets SET status = 'ANNULE_REVENDU', resold_count = resold_count + 1, updated_at = ?
         WHERE id = ?`,
-    ).run(nowIso(), oldTicket.id);
+      )
+      .run(nowIso(), oldTicket.id);
 
     // b) Nouveau billet, nouveau QR, nouveau titulaire. Le siège n'est jamais
     //    repassé par DISPONIBLE : issueTicket le laisse en VENDU.
-    const newTicket = issueTicket(db, {
+    const newTicket = await issueTicket(db, {
       bookingId: params.bookingId,
       tripId: listing.trip_id,
       seat,
@@ -290,40 +309,49 @@ export function completeResale(params: {
     );
     const net = listing.price_amount - fee;
 
-    const originalPayment = db
-      .prepare(
+    const originalPayment = await db
+      .prepare<{ provider: string; payer_phone: string }>(
         `SELECT provider, payer_phone FROM payments
           WHERE booking_id = ? AND status = 'CONFIRME' AND provider <> 'AVOIR'
           ORDER BY created_at LIMIT 1`,
       )
-      .get(oldTicket.booking_id) as { provider: string; payer_phone: string } | undefined;
+      .get(oldTicket.booking_id);
 
     // §2.6 : « Le remboursement part vers le numéro Mobile Money ayant servi au
     // paiement initial, jamais vers un numéro saisi au moment de la revente. »
     const targetPhone = originalPayment?.payer_phone || oldTicket.passenger_phone;
 
-    db.prepare(
-      `INSERT INTO refunds
+    await db
+      .prepare(
+        `INSERT INTO refunds
          (id, ticket_id, booking_id, amount, currency, target_phone, provider, reason, liable, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'Revente du billet', 'PLATEFORME', 'EN_FILE', ?)`,
-    ).run(
-      newId("rfd"),
-      oldTicket.id,
-      oldTicket.booking_id,
-      net,
-      listing.price_currency,
-      targetPhone,
-      originalPayment?.provider ?? "MPESA",
-      nowIso(),
-    );
+      )
+      .run(
+        newId("rfd"),
+        oldTicket.id,
+        oldTicket.booking_id,
+        net,
+        listing.price_currency,
+        targetPhone,
+        originalPayment?.provider ?? "MPESA",
+        nowIso(),
+      );
 
-    db.prepare(
-      `UPDATE resale_listings SET status = 'VENDUE', sold_to_ticket_id = ?, fee_amount = ?, sold_at = ?
-        WHERE id = ?`,
-    ).run(newTicket.id, fee, nowIso(), listing.id);
+    const sold = await db
+      .prepare(
+        `UPDATE resale_listings SET status = 'VENDUE', sold_to_ticket_id = ?, fee_amount = ?, sold_at = ?
+        WHERE id = ? AND status = 'ACTIVE'`,
+      )
+      .run(newTicket.id, fee, nowIso(), listing.id);
+    if (sold.changes !== 1) {
+      // Le verrou FOR UPDATE pris plus haut rend ce cas improbable ; filet de
+      // sécurité si jamais l'annonce a changé de statut entre-temps.
+      throw errors.conflict("ANNONCE_INDISPONIBLE", "Ce siège vient d'être vendu à un autre acheteur.");
+    }
 
     // d) SMS aux deux parties (étape 5).
-    queueSms(
+    await queueSms(
       db,
       oldTicket.passenger_phone,
       `MOBEMBO : votre siege ${seat.seat_number} du ${formatDateTime(trip.departure_datetime)} a ete revendu. ` +
@@ -331,7 +359,7 @@ export function completeResale(params: {
         `Votre ancien billet ${oldTicket.ticket_code} n'est plus valable.`,
       "REVENTE_VENDUE",
     );
-    queueSms(
+    await queueSms(
       db,
       params.buyerPhone,
       `MOBEMBO : billet ${newTicket.ticket_code} confirme, siege ${seat.seat_number}, ` +
@@ -339,7 +367,7 @@ export function completeResale(params: {
       "REVENTE_ACHETEE",
     );
 
-    audit(
+    await audit(
       {
         companyId: trip.company_id,
         action: "REVENTE_FINALISEE",
@@ -357,7 +385,7 @@ export function completeResale(params: {
     );
 
     return {
-      ancien: getTicket(oldTicket.id, db),
+      ancien: await getTicket(oldTicket.id, db),
       nouveau: newTicket,
       commission: fee,
       remboursementVendeur: net,
@@ -371,15 +399,21 @@ export function completeResale(params: {
 /**
  * §2.6 Transfert : gratuit, jusqu'à 1 h avant le départ, aucun décaissement.
  * « Il ne coûte rien à la plateforme […] C'est aussi le cas le plus fréquent. »
+ *
+ * Même risque de concurrence que `completeResale` : deux transferts (ou un
+ * transfert et une revente) visant le même billet en même temps. La mise à
+ * jour du billet re-vérifie donc son statut d'origine dans le WHERE et compte
+ * les lignes affectées avant d'émettre le nouveau billet — le perdant de la
+ * course échoue proprement au lieu de dupliquer le siège.
  */
-export function transferTicket(params: {
+export async function transferTicket(params: {
   ticketId: string;
   actorPhone: string;
   beneficiaryName: string;
   beneficiaryPhone: string;
-}): { ancien: TicketRow; nouveau: TicketRow } {
-  const outcome = tx((db) => {
-    const ticket = getTicket(params.ticketId, db);
+}): Promise<{ ancien: TicketRow; nouveau: TicketRow }> {
+  const outcome = await tx(async (db) => {
+    const ticket = await getTicket(params.ticketId, db);
     if (ticket.passenger_phone !== params.actorPhone) {
       throw errors.forbidden("Ce billet n'est pas au nom de ce numéro.");
     }
@@ -387,8 +421,8 @@ export function transferTicket(params: {
       throw errors.conflict("BILLET_NON_TRANSFERABLE", `Statut ${ticket.status} : transfert impossible.`);
     }
 
-    const trip = getTrip(ticket.trip_id, db);
-    const policy = companyPolicy(getCompany(trip.company_id, db));
+    const trip = await getTrip(ticket.trip_id, db);
+    const policy = companyPolicy(await getCompany(trip.company_id, db));
     if (hoursUntil(trip.departure_datetime) < policy.transferDeadlineHours) {
       throw errors.conflict(
         "DELAI_TRANSFERT_DEPASSE",
@@ -396,19 +430,29 @@ export function transferTicket(params: {
       );
     }
 
-    const seat = db
-      .prepare(`SELECT id, seat_number FROM trip_seats WHERE id = ?`)
-      .get(ticket.trip_seat_id) as { id: string; seat_number: string };
+    const seat = (await db
+      .prepare<{ id: string; seat_number: string }>(
+        `SELECT id, seat_number FROM trip_seats WHERE id = ?`,
+      )
+      .get(ticket.trip_seat_id)) as { id: string; seat_number: string };
 
-    db.prepare(
-      `UPDATE resale_listings SET status = 'RETIREE' WHERE ticket_id = ? AND status = 'ACTIVE'`,
-    ).run(ticket.id);
-    db.prepare(`UPDATE tickets SET status = 'TRANSFERE', updated_at = ? WHERE id = ?`).run(
-      nowIso(),
-      ticket.id,
-    );
+    await db
+      .prepare(`UPDATE resale_listings SET status = 'RETIREE' WHERE ticket_id = ? AND status = 'ACTIVE'`)
+      .run(ticket.id);
+    const transferred = await db
+      .prepare(
+        `UPDATE tickets SET status = 'TRANSFERE', updated_at = ?
+          WHERE id = ? AND status = ?`,
+      )
+      .run(nowIso(), ticket.id, ticket.status);
+    if (transferred.changes !== 1) {
+      throw errors.conflict(
+        "BILLET_NON_TRANSFERABLE",
+        "Ce billet vient de changer de statut (revente ou transfert concurrent).",
+      );
+    }
 
-    const newTicket = issueTicket(db, {
+    const newTicket = await issueTicket(db, {
       bookingId: ticket.booking_id,
       tripId: ticket.trip_id,
       seat,
@@ -420,7 +464,7 @@ export function transferTicket(params: {
       parentTicketId: ticket.id,
     });
 
-    queueSms(
+    await queueSms(
       db,
       ticket.passenger_phone,
       `MOBEMBO : votre billet ${ticket.ticket_code} a ete transfere a ${params.beneficiaryName}. ` +
@@ -428,7 +472,7 @@ export function transferTicket(params: {
       "TRANSFERT",
     );
 
-    audit(
+    await audit(
       {
         companyId: trip.company_id,
         action: "TRANSFERT_BILLET",
@@ -440,7 +484,7 @@ export function transferTicket(params: {
       db,
     );
 
-    return { ancien: getTicket(ticket.id, db), nouveau: newTicket };
+    return { ancien: await getTicket(ticket.id, db), nouveau: newTicket };
   });
   void flushSmsQueue();
   return outcome;

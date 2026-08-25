@@ -4,7 +4,7 @@ import { activeCredits } from "@/lib/domain/cancellation";
 
 /** GET /api/billets/mes-billets — billets et avoirs du passager connecté. */
 export const GET = authed(["PASSAGER"], async ({ session }) => {
-  const billets = getDb()
+  const billets = await getDb()
     .prepare(
       `SELECT t.*, s.seat_number AS siege, r.origin_city, r.destination_city,
               tr.departure_datetime, tr.status AS trajet_statut, c.name AS compagnie
@@ -17,5 +17,5 @@ export const GET = authed(["PASSAGER"], async ({ session }) => {
         ORDER BY tr.departure_datetime DESC`,
     )
     .all(session.phone);
-  return { billets, avoirs: activeCredits(session.phone) };
+  return { billets, avoirs: await activeCredits(session.phone) };
 });

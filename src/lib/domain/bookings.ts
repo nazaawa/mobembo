@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { DbHandle } from "@/lib/db";
 import { getDb, tx } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
 import { nowIso, hoursUntil } from "@/lib/core/time";
@@ -32,13 +32,13 @@ export interface PassengerInput {
  * maintien anonyme, que le client conserve jusqu'à la création de la
  * réservation.
  */
-export function holdSeats(params: {
+export async function holdSeats(params: {
   tripId: string;
   seatNumbers: string[];
   holdId: string;
   phone?: string | null;
-}): { holdId: string; lockedUntil: string } {
-  const trip = getTrip(params.tripId);
+}): Promise<{ holdId: string; lockedUntil: string }> {
+  const trip = await getTrip(params.tripId);
   if (trip.departure_mode !== "HORAIRE_FIXE") {
     // §2.2 : « Seul mode autorisé pour la vente en ligne. »
     throw errors.conflict(
@@ -49,9 +49,9 @@ export function holdSeats(params: {
   if (!["PLANIFIE", "EN_VENTE"].includes(trip.status)) {
     throw errors.conflict("TRAJET_FERME", "La vente est fermée sur ce trajet.");
   }
-  const policy = companyPolicy(getCompany(trip.company_id));
+  const policy = companyPolicy(await getCompany(trip.company_id));
 
-  const result = lockSeats({
+  const result = await lockSeats({
     tripId: params.tripId,
     seatNumbers: params.seatNumbers,
     channel: "EN_LIGNE",
@@ -63,7 +63,7 @@ export function holdSeats(params: {
   return { holdId: params.holdId, lockedUntil: result.lockedUntil };
 }
 
-export function releaseHold(tripId: string, holdId: string): number {
+export async function releaseHold(tripId: string, holdId: string): Promise<number> {
   return tx((db) => releaseLocks(db, tripId, holdId));
 }
 
@@ -75,7 +75,7 @@ export function releaseHold(tripId: string, holdId: string): number {
  * §2.5 : « Réservation de groupe : une réservation contient plusieurs billets —
  * plusieurs sièges, un seul paiement. »
  */
-export function createBooking(params: {
+export async function createBooking(params: {
   tripId: string;
   holdId: string;
   buyerPhone: string;
@@ -84,21 +84,21 @@ export function createBooking(params: {
   currency: Currency;
   /** §2.9 : un avoir se consomme sur un nouvel achat. */
   useCreditId?: string | null;
-}): { booking: BookingRow; dueAmount: number } {
-  return tx((db) => {
-    releaseExpiredLocks(db);
-    const trip = getTrip(params.tripId, db);
-    const company = getCompany(trip.company_id, db);
+}): Promise<{ booking: BookingRow; dueAmount: number }> {
+  return tx(async (db) => {
+    await releaseExpiredLocks(db);
+    const trip = await getTrip(params.tripId, db);
+    const company = await getCompany(trip.company_id, db);
     const policy = companyPolicy(company);
-    const bus = getBus(trip.bus_id, db);
-    const price = tripPrice(params.tripId, bus.category, db);
+    const bus = await getBus(trip.bus_id, db);
+    const price = await tripPrice(params.tripId, bus.category, db);
 
-    const held = db
-      .prepare(
+    const held = await db
+      .prepare<{ id: string; seat_number: string }>(
         `SELECT * FROM trip_seats
           WHERE trip_id = ? AND lock_session_id = ? AND status = 'VERROUILLE'`,
       )
-      .all(params.tripId, params.holdId) as Array<{ id: string; seat_number: string }>;
+      .all(params.tripId, params.holdId);
 
     if (held.length === 0) {
       throw errors.conflict(
@@ -118,34 +118,32 @@ export function createBooking(params: {
 
     // Le plafond de verrous par numéro se vérifie ici : c'est le premier
     // moment où le téléphone de l'acheteur est connu (§2.5).
-    const others = db
-      .prepare(
+    const others = await db
+      .prepare<{ n: number }>(
         `SELECT COUNT(*) AS n FROM trip_seats
           WHERE lock_phone = ? AND status = 'VERROUILLE' AND lock_session_id <> ?`,
       )
-      .get(params.buyerPhone, params.holdId) as { n: number };
-    if (others.n + params.passengers.length > policy.maxLocksPerPhone) {
+      .get(params.buyerPhone, params.holdId);
+    if ((others?.n ?? 0) + params.passengers.length > policy.maxLocksPerPhone) {
       throw errors.conflict(
         "TROP_DE_VERROUS",
         `Maximum ${policy.maxLocksPerPhone} sièges en attente de paiement par numéro.`,
       );
     }
-    db.prepare(
-      `UPDATE trip_seats SET lock_phone = ? WHERE trip_id = ? AND lock_session_id = ?`,
-    ).run(params.buyerPhone, params.tripId, params.holdId);
+    await db
+      .prepare(`UPDATE trip_seats SET lock_phone = ? WHERE trip_id = ? AND lock_session_id = ?`)
+      .run(params.buyerPhone, params.tripId, params.holdId);
 
     const unitPrice = params.currency === "USD" ? price.price_usd : price.price_cdf;
     const gross = unitPrice * params.passengers.length;
 
     let creditApplied = 0;
     if (params.useCreditId) {
-      const credit = db
-        .prepare(
+      const credit = await db
+        .prepare<{ id: string; amount: number; currency: Currency; expires_at: string; company_id: string }>(
           `SELECT * FROM credits WHERE id = ? AND passenger_phone = ? AND status = 'ACTIF'`,
         )
-        .get(params.useCreditId, params.buyerPhone) as
-        | { id: string; amount: number; currency: Currency; expires_at: string; company_id: string }
-        | undefined;
+        .get(params.useCreditId, params.buyerPhone);
       if (!credit) throw errors.notFound("Avoir");
       if (new Date(credit.expires_at) <= new Date()) {
         throw errors.conflict("AVOIR_EXPIRE", "Cet avoir a expiré.");
@@ -163,40 +161,56 @@ export function createBooking(params: {
     }
 
     const bookingId = newId("bkg");
-    db.prepare(
-      `INSERT INTO bookings
+    await db
+      .prepare(
+        `INSERT INTO bookings
          (id, trip_id, buyer_phone, buyer_name, channel, agency_id, sold_by_user_id,
           cash_session_id, total_amount, currency, status, credit_applied, created_at)
        VALUES (?, ?, ?, ?, 'EN_LIGNE', NULL, NULL, NULL, ?, ?, 'EN_ATTENTE', ?, ?)`,
-    ).run(bookingId, params.tripId, params.buyerPhone, params.buyerName, gross, params.currency, creditApplied, nowIso());
+      )
+      .run(
+        bookingId,
+        params.tripId,
+        params.buyerPhone,
+        params.buyerName,
+        gross,
+        params.currency,
+        creditApplied,
+        nowIso(),
+      );
 
     // Les passagers sont mémorisés tant que les billets n'existent pas : la
     // confirmation de paiement doit pouvoir émettre sans redemander les noms.
-    db.prepare(
-      `INSERT INTO sync_log (id, device_id, client_op_id, kind, payload_json, result, server_time)
+    await db
+      .prepare(
+        `INSERT INTO sync_log (id, device_id, client_op_id, kind, payload_json, result, server_time)
        VALUES (?, 'serveur', ?, 'PASSAGERS_RESERVATION', ?, 'ENREGISTRE', ?)`,
-    ).run(
-      newId("syn"),
-      `passengers:${bookingId}`,
-      JSON.stringify({ holdId: params.holdId, passengers: params.passengers, useCreditId: params.useCreditId ?? null }),
-      nowIso(),
-    );
+      )
+      .run(
+        newId("syn"),
+        `passengers:${bookingId}`,
+        JSON.stringify({ holdId: params.holdId, passengers: params.passengers, useCreditId: params.useCreditId ?? null }),
+        nowIso(),
+      );
 
     return {
-      booking: getBooking(bookingId, db),
+      booking: await getBooking(bookingId, db),
       dueAmount: gross - creditApplied,
     };
   });
 }
 
-export function bookingPassengers(bookingId: string, db: Database = getDb()): {
+export async function bookingPassengers(
+  bookingId: string,
+  db: DbHandle = getDb(),
+): Promise<{
   holdId: string;
   passengers: PassengerInput[];
   useCreditId: string | null;
-} {
-  const row = db
-    .prepare(`SELECT payload_json FROM sync_log WHERE client_op_id = ?`)
-    .get(`passengers:${bookingId}`) as { payload_json: string } | undefined;
+}> {
+  const row = await db
+    .prepare<{ payload_json: string }>(`SELECT payload_json FROM sync_log WHERE client_op_id = ?`)
+    .get(`passengers:${bookingId}`);
   if (!row) throw errors.notFound("Liste des passagers de la réservation");
   return JSON.parse(row.payload_json);
 }
@@ -206,21 +220,21 @@ export function bookingPassengers(bookingId: string, db: Database = getDb()): {
  * paiement, dans la transaction de celle-ci : un paiement confirmé sans billet
  * émis est une anomalie bloquante (§5.2).
  */
-export function confirmBooking(db: Database, bookingId: string): TicketRow[] {
-  const booking = getBooking(bookingId, db);
+export async function confirmBooking(db: DbHandle, bookingId: string): Promise<TicketRow[]> {
+  const booking = await getBooking(bookingId, db);
   if (booking.status === "CONFIRME") {
-    return db.prepare(`SELECT * FROM tickets WHERE booking_id = ?`).all(bookingId) as TicketRow[];
+    return db.prepare<TicketRow>(`SELECT * FROM tickets WHERE booking_id = ?`).all(bookingId);
   }
   if (booking.status !== "EN_ATTENTE") {
     throw errors.conflict("RESERVATION_CLOSE", "Cette réservation n'est plus en attente.");
   }
 
-  const { holdId, passengers, useCreditId } = bookingPassengers(bookingId, db);
-  const seats = db
-    .prepare(
+  const { holdId, passengers, useCreditId } = await bookingPassengers(bookingId, db);
+  const seats = await db
+    .prepare<{ id: string; seat_number: string }>(
       `SELECT * FROM trip_seats WHERE trip_id = ? AND lock_session_id = ? AND status = 'VERROUILLE'`,
     )
-    .all(booking.trip_id, holdId) as Array<{ id: string; seat_number: string }>;
+    .all(booking.trip_id, holdId);
 
   const bySeat = new Map(seats.map((s) => [s.seat_number, s]));
   const unitPrice = Math.round(booking.total_amount / Math.max(passengers.length, 1));
@@ -235,7 +249,7 @@ export function confirmBooking(db: Database, bookingId: string): TicketRow[] {
       );
     }
     tickets.push(
-      issueTicket(db, {
+      await issueTicket(db, {
         bookingId,
         tripId: booking.trip_id,
         seat,
@@ -248,17 +262,16 @@ export function confirmBooking(db: Database, bookingId: string): TicketRow[] {
   }
 
   if (useCreditId && booking.credit_applied > 0) {
-    db.prepare(
-      `UPDATE credits SET status = 'CONSOMME', consumed_booking_id = ? WHERE id = ?`,
-    ).run(bookingId, useCreditId);
+    await db
+      .prepare(`UPDATE credits SET status = 'CONSOMME', consumed_booking_id = ? WHERE id = ?`)
+      .run(bookingId, useCreditId);
   }
 
-  db.prepare(`UPDATE bookings SET status = 'CONFIRME', confirmed_at = ? WHERE id = ?`).run(
-    nowIso(),
-    bookingId,
-  );
+  await db
+    .prepare(`UPDATE bookings SET status = 'CONFIRME', confirmed_at = ? WHERE id = ?`)
+    .run(nowIso(), bookingId);
 
-  audit(
+  await audit(
     {
       action: "CONFIRMATION_RESERVATION",
       entity: "booking",
@@ -276,7 +289,7 @@ export function confirmBooking(db: Database, bookingId: string): TicketRow[] {
  * dans une seule transaction : au guichet il n'y a pas d'attente d'opérateur,
  * donc pas de raison de laisser une réservation en suspens.
  */
-export function posSell(params: {
+export async function posSell(params: {
   tripId: string;
   seatNumbers: string[];
   passengers: PassengerInput[];
@@ -290,26 +303,26 @@ export function posSell(params: {
   clientTime?: string;
   deviceId?: string;
   ip?: string | null;
-}): { booking: BookingRow; tickets: TicketRow[] } {
-  return tx((db) => {
+}): Promise<{ booking: BookingRow; tickets: TicketRow[] }> {
+  return tx(async (db) => {
     // Idempotence : une vente hors-ligne rejouée deux fois par la file de
     // synchronisation ne produit qu'un billet (§5.2).
     if (params.clientOpId) {
-      const replayed = db
-        .prepare(`SELECT server_ref FROM sync_log WHERE client_op_id = ?`)
-        .get(params.clientOpId) as { server_ref: string | null } | undefined;
+      const replayed = await db
+        .prepare<{ server_ref: string | null }>(`SELECT server_ref FROM sync_log WHERE client_op_id = ?`)
+        .get(params.clientOpId);
       if (replayed?.server_ref) {
         return {
-          booking: getBooking(replayed.server_ref, db),
-          tickets: db
-            .prepare(`SELECT * FROM tickets WHERE booking_id = ?`)
-            .all(replayed.server_ref) as TicketRow[],
+          booking: await getBooking(replayed.server_ref, db),
+          tickets: await db
+            .prepare<TicketRow>(`SELECT * FROM tickets WHERE booking_id = ?`)
+            .all(replayed.server_ref),
         };
       }
     }
 
-    releaseExpiredLocks(db);
-    const trip = getTrip(params.tripId, db);
+    await releaseExpiredLocks(db);
+    const trip = await getTrip(params.tripId, db);
     if (trip.company_id !== params.actor.companyId) {
       throw errors.forbidden("Ce trajet appartient à une autre compagnie.");
     }
@@ -317,11 +330,11 @@ export function posSell(params: {
       throw errors.conflict("TRAJET_FERME", "La vente est fermée sur ce trajet.");
     }
 
-    const session = db
-      .prepare(`SELECT * FROM cash_sessions WHERE id = ?`)
-      .get(params.cashSessionId) as
-      | { id: string; user_id: string; agency_id: string; closed_at: string | null }
-      | undefined;
+    const session = await db
+      .prepare<{ id: string; user_id: string; agency_id: string; closed_at: string | null }>(
+        `SELECT * FROM cash_sessions WHERE id = ?`,
+      )
+      .get(params.cashSessionId);
     // §2.4 : « Le guichetier ne vend que dans une session de caisse ouverte. »
     if (!session) throw errors.notFound("Session de caisse");
     if (session.closed_at) {
@@ -331,15 +344,15 @@ export function posSell(params: {
       throw errors.forbidden("Cette session de caisse appartient à un autre agent.");
     }
 
-    const bus = getBus(trip.bus_id, db);
-    const price = tripPrice(params.tripId, bus.category, db);
+    const bus = await getBus(trip.bus_id, db);
+    const price = await tripPrice(params.tripId, bus.category, db);
     // §2.4 : « Le guichetier ne peut pas modifier un tarif. Les prix viennent
     // de la grille tarifaire du trajet. » Aucun montant n'est accepté du client.
     const unitPrice = params.currency === "USD" ? price.price_usd : price.price_cdf;
     const total = unitPrice * params.passengers.length;
 
     const holdId = newId("pos");
-    lockSeatsInline(db, {
+    await lockSeatsInline(db, {
       tripId: params.tripId,
       seatNumbers: params.seatNumbers,
       holdId,
@@ -347,30 +360,32 @@ export function posSell(params: {
     });
 
     const bookingId = newId("bkg");
-    db.prepare(
-      `INSERT INTO bookings
+    await db
+      .prepare(
+        `INSERT INTO bookings
          (id, trip_id, buyer_phone, buyer_name, channel, agency_id, sold_by_user_id,
           cash_session_id, total_amount, currency, status, credit_applied, created_at, confirmed_at)
        VALUES (?, ?, ?, ?, 'GUICHET', ?, ?, ?, ?, ?, 'CONFIRME', 0, ?, ?)`,
-    ).run(
-      bookingId,
-      params.tripId,
-      params.buyerPhone,
-      params.buyerName,
-      params.actor.agencyId,
-      params.actor.userId,
-      params.cashSessionId,
-      total,
-      params.currency,
-      nowIso(),
-      nowIso(),
-    );
+      )
+      .run(
+        bookingId,
+        params.tripId,
+        params.buyerPhone,
+        params.buyerName,
+        params.actor.agencyId,
+        params.actor.userId,
+        params.cashSessionId,
+        total,
+        params.currency,
+        nowIso(),
+        nowIso(),
+      );
 
-    const seats = db
-      .prepare(
+    const seats = await db
+      .prepare<{ id: string; seat_number: string }>(
         `SELECT * FROM trip_seats WHERE trip_id = ? AND lock_session_id = ? AND status = 'VERROUILLE'`,
       )
-      .all(params.tripId, holdId) as Array<{ id: string; seat_number: string }>;
+      .all(params.tripId, holdId);
     const bySeat = new Map(seats.map((s) => [s.seat_number, s]));
 
     const tickets: TicketRow[] = [];
@@ -378,7 +393,7 @@ export function posSell(params: {
       const seat = bySeat.get(passenger.seatNumber);
       if (!seat) throw errors.conflict("SIEGE_INDISPONIBLE", `Siège ${passenger.seatNumber} indisponible.`);
       tickets.push(
-        issueTicket(db, {
+        await issueTicket(db, {
           bookingId,
           tripId: params.tripId,
           seat,
@@ -392,55 +407,61 @@ export function posSell(params: {
     }
 
     // §2.4 : « chaque billet crée un mouvement de caisse ».
-    db.prepare(
-      `INSERT INTO cash_movements
+    await db
+      .prepare(
+        `INSERT INTO cash_movements
          (id, cash_session_id, booking_id, type, amount, currency, label, created_at)
        VALUES (?, ?, ?, 'VENTE', ?, ?, ?, ?)`,
-    ).run(
-      newId("cmv"),
-      params.cashSessionId,
-      bookingId,
-      total,
-      params.currency,
-      `${params.passengers.length} billet(s) — ${tickets.map((t) => t.ticket_code).join(", ")}`,
-      nowIso(),
-    );
+      )
+      .run(
+        newId("cmv"),
+        params.cashSessionId,
+        bookingId,
+        total,
+        params.currency,
+        `${params.passengers.length} billet(s) — ${tickets.map((t) => t.ticket_code).join(", ")}`,
+        nowIso(),
+      );
 
     // Le paiement espèces est tracé au même titre qu'un Mobile Money : la
     // réconciliation des recettes (§2.11) ne distingue pas les canaux.
-    db.prepare(
-      `INSERT INTO payments
+    await db
+      .prepare(
+        `INSERT INTO payments
          (id, booking_id, provider, provider_ref, idempotency_key, payer_phone,
           amount, currency, status, created_at, resolved_at)
        VALUES (?, ?, 'ESPECES', NULL, ?, ?, ?, ?, 'CONFIRME', ?, ?)`,
-    ).run(
-      newId("pay"),
-      bookingId,
-      params.clientOpId ?? `pos:${bookingId}`,
-      params.buyerPhone,
-      total,
-      params.currency,
-      nowIso(),
-      nowIso(),
-    );
-
-    if (params.clientOpId) {
-      db.prepare(
-        `INSERT INTO sync_log
-           (id, device_id, client_op_id, kind, payload_json, result, server_ref, client_time, server_time)
-         VALUES (?, ?, ?, 'VENTE_POS', ?, 'APPLIQUE', ?, ?, ?)`,
-      ).run(
-        newId("syn"),
-        params.deviceId ?? "inconnu",
-        params.clientOpId,
-        JSON.stringify({ tripId: params.tripId, seats: params.seatNumbers }),
+      )
+      .run(
+        newId("pay"),
         bookingId,
-        params.clientTime ?? null,
+        params.clientOpId ?? `pos:${bookingId}`,
+        params.buyerPhone,
+        total,
+        params.currency,
+        nowIso(),
         nowIso(),
       );
+
+    if (params.clientOpId) {
+      await db
+        .prepare(
+          `INSERT INTO sync_log
+           (id, device_id, client_op_id, kind, payload_json, result, server_ref, client_time, server_time)
+         VALUES (?, ?, ?, 'VENTE_POS', ?, 'APPLIQUE', ?, ?, ?)`,
+        )
+        .run(
+          newId("syn"),
+          params.deviceId ?? "inconnu",
+          params.clientOpId,
+          JSON.stringify({ tripId: params.tripId, seats: params.seatNumbers }),
+          bookingId,
+          params.clientTime ?? null,
+          nowIso(),
+        );
     }
 
-    audit(
+    await audit(
       {
         userId: params.actor.userId,
         role: params.actor.role,
@@ -460,21 +481,31 @@ export function posSell(params: {
       db,
     );
 
-    return { booking: getBooking(bookingId, db), tickets };
+    return { booking: await getBooking(bookingId, db), tickets };
   });
 }
 
-/** Verrouillage à l'intérieur d'une transaction déjà ouverte (vente guichet). */
-function lockSeatsInline(
-  db: Database,
+/**
+ * Verrouillage à l'intérieur d'une transaction déjà ouverte (vente guichet).
+ *
+ * Même schéma défensif que `lockSeats` dans `./seats` : `SELECT ... FOR
+ * UPDATE` verrouille la ligne dès la lecture (un guichetier concurrent visant
+ * le même siège attend puis relit un état à jour au lieu d'un état périmé),
+ * et le nombre de lignes réellement affectées par l'UPDATE est vérifié — sous
+ * SQLite, la transaction IMMEDIATE suffisait seule ; sous MySQL, ces deux
+ * mécanismes combinés sont ce qui garantit qu'un siège n'est jamais vendu
+ * deux fois au guichet.
+ */
+async function lockSeatsInline(
+  db: DbHandle,
   params: { tripId: string; seatNumbers: string[]; holdId: string; phone: string },
-): void {
-  for (const seatNumber of params.seatNumbers) {
-    const seat = db
-      .prepare(`SELECT * FROM trip_seats WHERE trip_id = ? AND seat_number = ?`)
-      .get(params.tripId, seatNumber) as
-      | { id: string; status: string; channel: Channel }
-      | undefined;
+): Promise<void> {
+  for (const seatNumber of [...params.seatNumbers].sort()) {
+    const seat = await db
+      .prepare<{ id: string; status: string; channel: Channel }>(
+        `SELECT * FROM trip_seats WHERE trip_id = ? AND seat_number = ? FOR UPDATE`,
+      )
+      .get(params.tripId, seatNumber);
     if (!seat) throw errors.notFound(`Siège ${seatNumber}`);
     if (seat.channel !== "GUICHET") {
       throw errors.conflict(
@@ -485,19 +516,24 @@ function lockSeatsInline(
     if (seat.status !== "DISPONIBLE") {
       throw errors.conflict("SIEGE_INDISPONIBLE", `Le siège ${seatNumber} vient d'être pris.`);
     }
-    db.prepare(
-      `UPDATE trip_seats SET status = 'VERROUILLE', locked_until = NULL,
+    const result = await db
+      .prepare(
+        `UPDATE trip_seats SET status = 'VERROUILLE', locked_until = NULL,
               lock_session_id = ?, lock_phone = ?
         WHERE id = ? AND status = 'DISPONIBLE'`,
-    ).run(params.holdId, params.phone, seat.id);
+      )
+      .run(params.holdId, params.phone, seat.id);
+    if (result.changes !== 1) {
+      throw errors.conflict("SIEGE_INDISPONIBLE", `Le siège ${seatNumber} vient d'être pris.`);
+    }
   }
 }
 
 /** Réservations non payées dont le verrou a expiré. */
-export function expireStaleBookings(db: Database = getDb()): number {
-  releaseExpiredLocks(db);
-  const stale = db
-    .prepare(
+export async function expireStaleBookings(db: DbHandle = getDb()): Promise<number> {
+  await releaseExpiredLocks(db);
+  const stale = await db
+    .prepare<{ id: string }>(
       `SELECT b.id FROM bookings b
         WHERE b.status = 'EN_ATTENTE'
           AND NOT EXISTS (
@@ -510,20 +546,20 @@ export function expireStaleBookings(db: Database = getDb()): number {
                AND s.lock_phone = b.buyer_phone
           )`,
     )
-    .all() as { id: string }[];
+    .all();
   const update = db.prepare(`UPDATE bookings SET status = 'EXPIRE' WHERE id = ?`);
-  for (const row of stale) update.run(row.id);
+  for (const row of stale) await update.run(row.id);
   return stale.length;
 }
 
 /** Trajets dont la vente reste ouverte, filtrés pour le guichet (§2.4.1). */
-export function tripsForAgencyToday(
+export async function tripsForAgencyToday(
   agencyId: string,
-  db: Database = getDb(),
-): Array<{ id: string; departure_datetime: string; origin_city: string; destination_city: string; departure_mode: string; status: string; plate_number: string; category: string; disponibles: number }> {
+  db: DbHandle = getDb(),
+): Promise<Array<{ id: string; departure_datetime: string; origin_city: string; destination_city: string; departure_mode: string; status: string; plate_number: string; category: string; disponibles: number }>> {
   const from = new Date(Date.now() - 6 * 3_600_000).toISOString();
   const to = new Date(Date.now() + 36 * 3_600_000).toISOString();
-  releaseExpiredLocks(db);
+  await releaseExpiredLocks(db);
   return db
     .prepare(
       `SELECT t.id, t.departure_datetime, t.departure_mode, t.status,

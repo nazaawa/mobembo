@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { DbHandle } from "@/lib/db";
 import { getDb } from "@/lib/db";
 import { errors } from "@/lib/core/errors";
 import type {
@@ -214,8 +214,8 @@ export interface CreditRow {
 
 // --- Accès -----------------------------------------------------------------
 
-export function getCompany(id: string, db: Database = getDb()): CompanyRow {
-  const row = db.prepare(`SELECT * FROM companies WHERE id = ?`).get(id) as
+export async function getCompany(id: string, db: DbHandle = getDb()): Promise<CompanyRow> {
+  const row = (await db.prepare(`SELECT * FROM companies WHERE id = ?`).get(id)) as
     | CompanyRow
     | undefined;
   if (!row) throw errors.notFound("Compagnie");
@@ -230,68 +230,75 @@ export function companyPolicy(company: CompanyRow): CompanyPolicy {
   }
 }
 
-export function getAgency(id: string, db: Database = getDb()): AgencyRow {
-  const row = db.prepare(`SELECT * FROM agencies WHERE id = ?`).get(id) as
+export async function getAgency(id: string, db: DbHandle = getDb()): Promise<AgencyRow> {
+  const row = (await db.prepare(`SELECT * FROM agencies WHERE id = ?`).get(id)) as
     | AgencyRow
     | undefined;
   if (!row) throw errors.notFound("Agence");
   return row;
 }
 
-export function getTrip(id: string, db: Database = getDb()): TripRow {
-  const row = db.prepare(`SELECT * FROM trips WHERE id = ?`).get(id) as TripRow | undefined;
+export async function getTrip(id: string, db: DbHandle = getDb()): Promise<TripRow> {
+  const row = (await db.prepare(`SELECT * FROM trips WHERE id = ?`).get(id)) as TripRow | undefined;
   if (!row) throw errors.notFound("Trajet");
   return row;
 }
 
-export function getBus(id: string, db: Database = getDb()): BusRow {
-  const row = db.prepare(`SELECT * FROM buses WHERE id = ?`).get(id) as BusRow | undefined;
+export async function getBus(id: string, db: DbHandle = getDb()): Promise<BusRow> {
+  const row = (await db.prepare(`SELECT * FROM buses WHERE id = ?`).get(id)) as BusRow | undefined;
   if (!row) throw errors.notFound("Bus");
   return row;
 }
 
-export function getRoute(id: string, db: Database = getDb()): RouteRow {
-  const row = db.prepare(`SELECT * FROM routes WHERE id = ?`).get(id) as RouteRow | undefined;
+export async function getRoute(id: string, db: DbHandle = getDb()): Promise<RouteRow> {
+  const row = (await db.prepare(`SELECT * FROM routes WHERE id = ?`).get(id)) as
+    | RouteRow
+    | undefined;
   if (!row) throw errors.notFound("Ligne");
   return row;
 }
 
-export function getSeatMap(id: string, db: Database = getDb()): SeatMapRow {
-  const row = db.prepare(`SELECT * FROM seat_maps WHERE id = ?`).get(id) as
-    | SeatMapRow
-    | undefined;
+export async function getSeatMap(id: string, db: DbHandle = getDb()): Promise<SeatMapRow> {
+  const row = (await db
+    .prepare(`SELECT *, row_count AS \`rows\` FROM seat_maps WHERE id = ?`)
+    .get(id)) as SeatMapRow | undefined;
   if (!row) throw errors.notFound("Plan de sièges");
   return row;
 }
 
-export function getTicket(id: string, db: Database = getDb()): TicketRow {
-  const row = db.prepare(`SELECT * FROM tickets WHERE id = ?`).get(id) as TicketRow | undefined;
+export async function getTicket(id: string, db: DbHandle = getDb()): Promise<TicketRow> {
+  const row = (await db.prepare(`SELECT * FROM tickets WHERE id = ?`).get(id)) as
+    | TicketRow
+    | undefined;
   if (!row) throw errors.notFound("Billet");
   return row;
 }
 
-export function getTicketByCode(code: string, db: Database = getDb()): TicketRow | undefined {
-  return db.prepare(`SELECT * FROM tickets WHERE ticket_code = ?`).get(code.toUpperCase()) as
+export async function getTicketByCode(
+  code: string,
+  db: DbHandle = getDb(),
+): Promise<TicketRow | undefined> {
+  return (await db.prepare(`SELECT * FROM tickets WHERE ticket_code = ?`).get(code.toUpperCase())) as
     | TicketRow
     | undefined;
 }
 
-export function getBooking(id: string, db: Database = getDb()): BookingRow {
-  const row = db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(id) as
+export async function getBooking(id: string, db: DbHandle = getDb()): Promise<BookingRow> {
+  const row = (await db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(id)) as
     | BookingRow
     | undefined;
   if (!row) throw errors.notFound("Réservation");
   return row;
 }
 
-export function tripPrice(
+export async function tripPrice(
   tripId: string,
   category: BusCategory,
-  db: Database = getDb(),
-): TripPriceRow {
-  const row = db
+  db: DbHandle = getDb(),
+): Promise<TripPriceRow> {
+  const row = (await db
     .prepare(`SELECT * FROM trip_prices WHERE trip_id = ? AND category = ?`)
-    .get(tripId, category) as TripPriceRow | undefined;
+    .get(tripId, category)) as TripPriceRow | undefined;
   if (!row) throw errors.notFound(`Tarif ${category} du trajet`);
   return row;
 }
@@ -304,24 +311,20 @@ export interface TripDetail extends TripRow {
   prices: TripPriceRow[];
 }
 
-export function tripDetail(id: string, db: Database = getDb()): TripDetail {
-  const trip = getTrip(id, db);
-  return {
-    ...trip,
-    route: getRoute(trip.route_id, db),
-    bus: getBus(trip.bus_id, db),
-    company: getCompany(trip.company_id, db),
-    agency: trip.origin_agency_id ? getAgency(trip.origin_agency_id, db) : null,
-    prices: db
-      .prepare(`SELECT * FROM trip_prices WHERE trip_id = ?`)
-      .all(id) as TripPriceRow[],
-  };
+export async function tripDetail(id: string, db: DbHandle = getDb()): Promise<TripDetail> {
+  const trip = await getTrip(id, db);
+  const [route, bus, company, agency, prices] = await Promise.all([
+    getRoute(trip.route_id, db),
+    getBus(trip.bus_id, db),
+    getCompany(trip.company_id, db),
+    trip.origin_agency_id ? getAgency(trip.origin_agency_id, db) : Promise.resolve(null),
+    db.prepare<TripPriceRow>(`SELECT * FROM trip_prices WHERE trip_id = ?`).all(id),
+  ]);
+  return { ...trip, route, bus, company, agency, prices };
 }
 
-export function rolesOf(userId: string, db: Database = getDb()): UserRoleRow[] {
-  return db
-    .prepare(`SELECT * FROM user_roles WHERE user_id = ? ORDER BY role`)
-    .all(userId) as UserRoleRow[];
+export async function rolesOf(userId: string, db: DbHandle = getDb()): Promise<UserRoleRow[]> {
+  return db.prepare<UserRoleRow>(`SELECT * FROM user_roles WHERE user_id = ? ORDER BY role`).all(userId);
 }
 
 /** Vue minimale d'un siège de trajet, suffisante pour émettre un billet. */

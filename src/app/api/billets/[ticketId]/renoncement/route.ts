@@ -9,11 +9,15 @@ export const POST = authedWith<{ ticketId: string }>(
   ["PASSAGER"],
   async ({ request, params, session }) => {
     const { action } = await body<{ action: "REPORT" | "ANNULATION_TARDIVE" }>(request);
-    const result = renounceForCredit({
+    const result = await renounceForCredit({
       ticketId: params.ticketId,
       actorPhone: session.phone,
       action,
     });
-    return { billet: result.ticket, avoir: result.credit, grille: renunciationGrid(params.ticketId) };
+    return {
+      billet: result.ticket,
+      avoir: result.credit,
+      grille: await renunciationGrid(params.ticketId),
+    };
   },
 );

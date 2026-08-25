@@ -10,7 +10,7 @@ import { newId } from "@/lib/core/ids";
 export const POST = handler(async ({ request, session }) => {
   const input = await body<{ tripId: string; sieges: string[]; holdId?: string }>(request);
   const holdId = input.holdId ?? newId("hold");
-  const result = holdSeats({
+  const result = await holdSeats({
     tripId: input.tripId,
     seatNumbers: input.sieges,
     holdId,
@@ -22,5 +22,5 @@ export const POST = handler(async ({ request, session }) => {
 /** DELETE — le passager renonce : les sièges retournent immédiatement au stock. */
 export const DELETE = handler(async ({ request }) => {
   const { tripId, holdId } = await body<{ tripId: string; holdId: string }>(request);
-  return { liberes: releaseHold(tripId, holdId) };
+  return { liberes: await releaseHold(tripId, holdId) };
 });

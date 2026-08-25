@@ -17,16 +17,18 @@ export const GET = handler(async ({ request }) => {
     throw errors.invalid("Paramètres requis : origine, destination, date (YYYY-MM-DD).");
   }
 
-  const trips = searchTrips({ origin, destination, day });
+  const trips = await searchTrips({ origin, destination, day });
   return {
-    resultats: trips.map((trip) => ({
-      ...trip,
-      // §2.6 : les sièges remis en vente portent un badge, au même prix.
-      remisesEnVente: activeListings(trip.tripId).map((offer) => ({
-        listingId: offer.listing.id,
-        siege: offer.seatNumber,
-        prixUsd: offer.listing.price_amount,
+    resultats: await Promise.all(
+      trips.map(async (trip) => ({
+        ...trip,
+        // §2.6 : les sièges remis en vente portent un badge, au même prix.
+        remisesEnVente: (await activeListings(trip.tripId)).map((offer) => ({
+          listingId: offer.listing.id,
+          siege: offer.seatNumber,
+          prixUsd: offer.listing.price_amount,
+        })),
       })),
-    })),
+    ),
   };
 });

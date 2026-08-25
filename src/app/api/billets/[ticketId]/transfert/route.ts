@@ -9,7 +9,7 @@ export const POST = authedWith<{ ticketId: string }>(
   ["PASSAGER"],
   async ({ request, params, session }) => {
     const { nom, telephone } = await body<{ nom: string; telephone: string }>(request);
-    const result = transferTicket({
+    const result = await transferTicket({
       ticketId: params.ticketId,
       actorPhone: session.phone,
       beneficiaryName: nom,

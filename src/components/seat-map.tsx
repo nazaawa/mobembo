@@ -46,7 +46,8 @@ export function SeatMap({
         <span aria-hidden>▲</span>
       </div>
 
-      <div className="inline-block rounded-xl border border-bordure bg-surface-alt p-3">
+      <div className="overflow-x-auto rounded-xl border border-bordure bg-surface-alt p-3">
+        <div className="mx-auto w-max">
         <div className="flex flex-col gap-1.5">
           {Array.from({ length: rows }, (_, index) => index + 1).map((row) => (
             <div key={row} className="flex items-center gap-1.5">
@@ -80,6 +81,7 @@ export function SeatMap({
               })}
             </div>
           ))}
+        </div>
         </div>
       </div>
 
@@ -140,10 +142,9 @@ function SeatButton({
       aria-pressed={selected}
       disabled={!cliquable}
       onClick={() => onToggle(seat.numero)}
-      className={`h-9 w-9 rounded-md border text-[11px] tabular-nums transition ${tone} ${
-        cliquable ? "cursor-pointer hover:brightness-95" : "cursor-not-allowed"
+      className={`h-11 w-11 rounded-[8px] border text-[11px] tabular-nums transition ${tone} ${
+        cliquable ? "cursor-pointer hover:brightness-95 focus-visible:ring-2 focus-visible:ring-accent/30" : "cursor-not-allowed"
       }`}
-      style={{ minHeight: "2.25rem" }}
     >
       {seat.numero}
     </button>

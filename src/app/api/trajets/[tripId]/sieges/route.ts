@@ -9,9 +9,11 @@ import { tripDetail } from "@/lib/domain/repo";
  * voit sans pouvoir les cliquer.
  */
 export const GET = handlerWith<{ tripId: string }>(async ({ params }) => {
-  const trip = tripDetail(params.tripId);
-  const listings = activeListings(params.tripId);
+  const trip = await tripDetail(params.tripId);
+  const listings = await activeListings(params.tripId);
   const parSiege = new Map(listings.map((l) => [l.seatNumber, l.listing]));
+  const seats = await listTripSeats(params.tripId);
+  const disponibilite = await seatAvailability(params.tripId);
 
   return {
     trajet: {
@@ -26,7 +28,7 @@ export const GET = handlerWith<{ tripId: string }>(async ({ params }) => {
       prix: trip.prices,
       agence: trip.agency?.name ?? null,
     },
-    sieges: listTripSeats(params.tripId).map((seat) => ({
+    sieges: seats.map((seat) => ({
       numero: seat.seat_number,
       statut: seat.status,
       canal: seat.channel,
@@ -34,7 +36,7 @@ export const GET = handlerWith<{ tripId: string }>(async ({ params }) => {
       remisEnVente: parSiege.has(seat.seat_number),
       listingId: parSiege.get(seat.seat_number)?.id ?? null,
     })),
-    disponibilite: seatAvailability(params.tripId),
+    disponibilite,
   };
 });
 
@@ -43,7 +45,7 @@ export const PATCH = authedWith<{ tripId: string }>(
   ["GERANT_AGENCE", "ADMIN_COMPAGNIE", "SUPER_ADMIN"],
   async ({ request, params, session }) => {
     const { seatNumber, blocked } = await body<{ seatNumber: string; blocked: boolean }>(request);
-    blockSeat({
+    await blockSeat({
       tripId: params.tripId,
       seatNumber,
       blocked,

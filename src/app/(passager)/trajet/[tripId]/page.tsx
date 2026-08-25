@@ -16,7 +16,7 @@ export default async function PageTrajet(props: PageProps<"/trajet/[tripId]">) {
 
   let trip;
   try {
-    trip = tripDetail(tripId);
+    trip = await tripDetail(tripId);
   } catch {
     notFound();
   }
@@ -42,12 +42,15 @@ export default async function PageTrajet(props: PageProps<"/trajet/[tripId]">) {
     );
   }
 
-  const seatMap = getSeatMap(trip.bus.seat_map_id);
+  const seatMap = await getSeatMap(trip.bus.seat_map_id);
   const layout = JSON.parse(seatMap.layout_json) as SeatMapLayout;
-  const seats = listTripSeats(tripId);
-  const listings = activeListings(tripId);
+  const [seats, listings, disponibilites] = await Promise.all([
+    listTripSeats(tripId),
+    activeListings(tripId),
+    seatAvailability(tripId),
+  ]);
   const parSiege = new Map(listings.map((l) => [l.seatNumber, l.listing]));
-  const dispo = seatAvailability(tripId).find((a) => a.channel === "EN_LIGNE");
+  const dispo = disponibilites.find((a) => a.channel === "EN_LIGNE");
   const prix = trip.prices.find((p) => p.category === trip.bus.category) ?? trip.prices[0];
 
   return (
@@ -90,6 +93,14 @@ export default async function PageTrajet(props: PageProps<"/trajet/[tripId]">) {
         prixUsd={prix.price_usd}
         prixCdf={prix.price_cdf}
         placesRestantes={(dispo?.disponibles ?? 0) + listings.length}
+        trajet={{
+          origine: trip.route.origin_city,
+          destination: trip.route.destination_city,
+          compagnie: trip.company.name,
+          depart: trip.departure_datetime,
+          categorie: trip.bus.category,
+          plaque: trip.bus.plate_number,
+        }}
       />
     </div>
   );

@@ -14,7 +14,7 @@ export default async function Planification() {
   const companyId = session!.companyId!;
   const gestionnaire = ["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session!.activeRole);
 
-  const trajets = db
+  const trajets = (await db
     .prepare(
       `SELECT t.*, r.origin_city, r.destination_city, b.plate_number, b.category, a.name AS agence,
               (SELECT COUNT(*) FROM trip_seats s WHERE s.trip_id = t.id) AS sieges,
@@ -29,7 +29,7 @@ export default async function Planification() {
         WHERE t.company_id = ?
         ORDER BY t.departure_datetime DESC LIMIT 80`,
     )
-    .all(companyId) as Array<{
+    .all(companyId)) as Array<{
     id: string;
     departure_datetime: string;
     departure_mode: string;
@@ -46,24 +46,24 @@ export default async function Planification() {
     prixUsd: number | null;
   }>;
 
-  const lignes = db
+  const lignes = (await db
     .prepare(`SELECT id, origin_city, destination_city FROM routes WHERE company_id = ? ORDER BY origin_city`)
-    .all(companyId) as Array<{ id: string; origin_city: string; destination_city: string }>;
-  const bus = db
+    .all(companyId)) as Array<{ id: string; origin_city: string; destination_city: string }>;
+  const bus = (await db
     .prepare(
       `SELECT b.id, b.plate_number, b.category, m.seat_count FROM buses b
          JOIN seat_maps m ON m.id = b.seat_map_id
         WHERE b.company_id = ? AND b.status = 'ACTIF' ORDER BY b.plate_number`,
     )
-    .all(companyId) as Array<{
+    .all(companyId)) as Array<{
     id: string;
     plate_number: string;
     category: string;
     seat_count: number;
   }>;
-  const agences = db
+  const agences = (await db
     .prepare(`SELECT id, name FROM agencies WHERE company_id = ? ORDER BY name`)
-    .all(companyId) as Array<{ id: string; name: string }>;
+    .all(companyId)) as Array<{ id: string; name: string }>;
 
   return (
     <div className="space-y-5">

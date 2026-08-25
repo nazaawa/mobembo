@@ -9,7 +9,7 @@ export const POST = authedWith<{ sessionId: string }>(
   ["GUICHETIER", "GERANT_AGENCE"],
   async ({ request, params, session, ip, device }) => {
     const { montantCompte } = await body<{ montantCompte: number }>(request);
-    const result = closeCashSession({
+    const result = await closeCashSession({
       sessionId: params.sessionId,
       countedAmount: montantCompte,
       actor: { userId: session.userId, role: session.activeRole },

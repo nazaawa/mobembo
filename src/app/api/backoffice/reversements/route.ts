@@ -12,19 +12,21 @@ export const GET = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request, 
   if (!companyId) throw errors.invalid("Compagnie non déterminée.");
   const db = getDb();
 
-  const settlements = db
+  const settlements = (await db
     .prepare(`SELECT * FROM settlements WHERE company_id = ? ORDER BY period_end DESC LIMIT 26`)
-    .all(companyId) as Array<{ id: string }>;
+    .all(companyId)) as Array<{ id: string }>;
 
   return {
     periodeCourante: currentSettlementPeriod(),
-    reversements: settlements.map((settlement) => ({
-      ...settlement,
-      lignes: db
-        .prepare(`SELECT * FROM settlement_lines WHERE settlement_id = ?`)
-        .all(settlement.id),
-    })),
-    grandLivre: db
+    reversements: await Promise.all(
+      settlements.map(async (settlement) => ({
+        ...settlement,
+        lignes: await db
+          .prepare(`SELECT * FROM settlement_lines WHERE settlement_id = ?`)
+          .all(settlement.id),
+      })),
+    ),
+    grandLivre: await db
       .prepare(`SELECT * FROM company_ledger WHERE company_id = ? ORDER BY created_at DESC LIMIT 50`)
       .all(companyId),
   };
@@ -42,7 +44,7 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
 
   if (input.action === "MARQUER_PAYE") {
     if (!input.reversementId) throw errors.invalid("reversementId requis.");
-    markSettlementPaid(input.reversementId, {
+    await markSettlementPaid(input.reversementId, {
       userId: session.userId,
       role: session.activeRole,
     });
@@ -54,7 +56,7 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
   const period = currentSettlementPeriod();
 
   return {
-    reversement: computeSettlement({
+    reversement: await computeSettlement({
       companyId,
       periodStart: input.du ?? period.periodStart,
       periodEnd: input.au ?? period.periodEnd,

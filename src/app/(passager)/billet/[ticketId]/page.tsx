@@ -18,18 +18,18 @@ export default async function PageBillet(props: PageProps<"/billet/[ticketId]">)
 
   let ticket;
   try {
-    ticket = getTicket(ticketId);
+    ticket = await getTicket(ticketId);
   } catch {
     notFound();
   }
 
   const db = getDb();
-  const trip = tripDetail(ticket.trip_id, db);
-  const seat = db
-    .prepare(`SELECT seat_number FROM trip_seats WHERE id = ?`)
-    .get(ticket.trip_seat_id) as { seat_number: string };
-  const grille = renunciationGrid(ticketId, db);
-  const revente = checkResaleEligibility(ticketId, db);
+  const trip = await tripDetail(ticket.trip_id, db);
+  const seat = (await db
+    .prepare<{ seat_number: string }>(`SELECT seat_number FROM trip_seats WHERE id = ?`)
+    .get(ticket.trip_seat_id)) as { seat_number: string };
+  const grille = await renunciationGrid(ticketId, db);
+  const revente = await checkResaleEligibility(ticketId, db);
 
   const valide = ["EMIS", "EN_REVENTE"].includes(ticket.status);
   const tone =

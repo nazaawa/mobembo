@@ -5,10 +5,10 @@ import { errors } from "@/lib/core/errors";
 import type { Role } from "@/lib/domain/types";
 
 export const GET = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ session }) => ({
-  utilisateurs: getDb()
+  utilisateurs: await getDb()
     .prepare(
       `SELECT u.id, u.phone, u.name, u.status, u.created_at,
-              GROUP_CONCAT(ur.role || COALESCE(' @' || a.name, '')) AS roles
+              GROUP_CONCAT(CONCAT(ur.role, COALESCE(CONCAT(' @', a.name), ''))) AS roles
          FROM users u
          JOIN user_roles ur ON ur.user_id = u.id
          LEFT JOIN agencies a ON a.id = ur.agency_id
@@ -30,7 +30,7 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
     throw errors.invalid("Le mot de passe doit faire au moins 8 caractères.");
   }
 
-  const user = createStaffUser({
+  const user = await createStaffUser({
     phone: input.telephone,
     name: input.nom,
     password: input.motDePasse,

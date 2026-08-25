@@ -39,6 +39,7 @@ export function Reservation({
   prixUsd,
   prixCdf,
   placesRestantes,
+  trajet,
 }: {
   tripId: string;
   rows: number;
@@ -47,6 +48,14 @@ export function Reservation({
   prixUsd: number;
   prixCdf: number;
   placesRestantes: number;
+  trajet: {
+    origine: string;
+    destination: string;
+    compagnie: string;
+    depart: string;
+    categorie: string;
+    plaque: string;
+  };
 }) {
   const router = useRouter();
   const [etape, setEtape] = useState<Etape>("SIEGES");
@@ -251,9 +260,13 @@ export function Reservation({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      <JourneyStepper etape={etape} />
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+        <div className="min-w-0 space-y-4">
       {erreur && (
-        <p className="rounded-lg border border-alerte/40 bg-alerte-doux px-3 py-2 text-sm text-alerte">
+        <p role="alert" className="rounded-[10px] border border-alerte/40 bg-alerte-doux px-3 py-2 text-sm text-alerte">
           {erreur}
         </p>
       )}
@@ -423,16 +436,10 @@ export function Reservation({
       {etape === "PAIEMENT" && (
         <Card title="Paiement Mobile Money">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Devise">
-              <select
-                className={inputClass}
-                value={devise}
-                onChange={(e) => setDevise(e.target.value as Currency)}
-                disabled={Boolean(reservationId)}
-              >
-                <option value="USD">Dollar américain (USD)</option>
-                <option value="CDF">Franc congolais (CDF)</option>
-              </select>
+            <Field label="Devise choisie">
+              <div className="flex min-h-11 items-center rounded-lg border border-bordure bg-surface-alt px-3 text-sm font-semibold">
+                {devise === "USD" ? "Dollar américain (USD)" : "Franc congolais (CDF)"}
+              </div>
             </Field>
             <Field label="Opérateur">
               <select
@@ -486,6 +493,105 @@ export function Reservation({
           </div>
         </Card>
       )}
+        </div>
+
+        <aside className="lg:sticky lg:top-24">
+          <section className="overflow-hidden rounded-[14px] border border-bordure bg-surface shadow-[0_16px_40px_rgba(8,22,45,0.08)]">
+            <header className="bg-navy px-5 py-4 text-white">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/65">Résumé du voyage</p>
+              <h2 className="mt-1 font-heading text-xl font-bold">
+                {trajet.origine} <span className="text-accent-clair">→</span> {trajet.destination}
+              </h2>
+            </header>
+            <div className="space-y-4 p-5">
+              <dl className="space-y-3 text-sm">
+                <SummaryRow label="Compagnie" value={trajet.compagnie} />
+                <SummaryRow
+                  label="Départ"
+                  value={new Intl.DateTimeFormat("fr-CD", {
+                    weekday: "short",
+                    day: "numeric",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }).format(new Date(trajet.depart))}
+                />
+                <SummaryRow label="Bus" value={`${trajet.categorie} · ${trajet.plaque}`} />
+                <SummaryRow label="Sièges" value={selection.join(", ") || "À choisir"} />
+              </dl>
+
+              <div className="border-t border-bordure pt-4">
+                <Field
+                  label="Devise de paiement"
+                  hint={reservationId ? "Devise verrouillée pour cette réservation." : "À choisir avant la validation des voyageurs."}
+                >
+                  <select
+                    className={inputClass}
+                    value={devise}
+                    onChange={(event) => setDevise(event.target.value as Currency)}
+                    disabled={Boolean(reservationId)}
+                  >
+                    <option value="USD">USD — Dollar américain</option>
+                    <option value="CDF">CDF — Franc congolais</option>
+                  </select>
+                </Field>
+              </div>
+
+              <dl className="space-y-2 border-t border-bordure pt-4 text-sm">
+                <SummaryRow label="Prix par siège" value={<Money amount={prixUnitaire} currency={devise} />} />
+                <div className="flex items-end justify-between gap-3">
+                  <dt className="font-semibold text-navy">Total</dt>
+                  <dd className="text-2xl font-bold text-navy"><Money amount={total} currency={devise} /></dd>
+                </div>
+              </dl>
+
+              {expiration && (
+                <div className="rounded-[10px] bg-attention-doux px-3 py-2 text-xs text-attention">
+                  Sièges maintenus encore <strong className="tabular-nums">{minutes}:{String(secondes).padStart(2, "0")}</strong>
+                </div>
+              )}
+              <p className="text-[11px] leading-relaxed text-texte-doux">
+                Jusqu&apos;à trois sièges par réservation. Le prix vient directement de la grille du départ.
+              </p>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function JourneyStepper({ etape }: { etape: Etape }) {
+  const active = etape === "SIEGES" ? 2 : etape === "IDENTITE" ? 3 : 4;
+  const steps = ["Trajet", "Sièges", "Voyageurs", "Paiement"];
+
+  return (
+    <nav aria-label="Étapes de réservation" className="overflow-x-auto rounded-[14px] border border-bordure bg-surface px-4 py-4 sm:px-6">
+      <ol className="flex min-w-[34rem] items-center">
+        {steps.map((label, index) => {
+          const number = index + 1;
+          const complete = number < active;
+          const current = number === active;
+          return (
+            <li key={label} className="flex flex-1 items-center last:flex-none" aria-current={current ? "step" : undefined}>
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${complete ? "border-succes bg-succes text-white" : current ? "border-accent bg-accent text-white" : "border-bordure bg-surface text-texte-doux"}`}>
+                {complete ? "✓" : number}
+              </span>
+              <span className={`ml-2 text-xs font-semibold ${current ? "text-navy" : "text-texte-doux"}`}>{label}</span>
+              {index < steps.length - 1 && <span className={`mx-3 h-px flex-1 ${complete ? "bg-succes" : "bg-bordure"}`} aria-hidden />}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <dt className="text-texte-doux">{label}</dt>
+      <dd className="text-right font-medium text-navy">{value}</dd>
     </div>
   );
 }

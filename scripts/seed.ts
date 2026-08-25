@@ -27,41 +27,47 @@ function at(days: number, hour: number, minute = 0): string {
   return date.toISOString();
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const db = getDb();
-  resetDb();
+  await resetDb();
 
   const companyId = newId("cmp");
   const now = nowIso();
 
-  tx((t) => {
-    t.prepare(
-      `INSERT INTO companies
+  await tx(async (t) => {
+    await t
+      .prepare(
+        `INSERT INTO companies
          (id, name, logo, status, commission_rate, currency_rate_usd_cdf, currency_rate_at,
           qr_secret, policy_json, created_at)
        VALUES (?, 'Transco Kin', NULL, 'ACTIVE', 0.06, 2850, ?, ?, ?, ?)`,
-    ).run(companyId, now, randomBytes(32).toString("hex"), JSON.stringify(DEFAULT_POLICY), now);
+      )
+      .run(companyId, now, randomBytes(32).toString("hex"), JSON.stringify(DEFAULT_POLICY), now);
 
     // §2.10 : « Gratuit pendant les 3 mois de pilote, puis facturé. »
-    t.prepare(
-      `INSERT INTO subscriptions
+    await t
+      .prepare(
+        `INSERT INTO subscriptions
          (id, company_id, plan, buses_count, monthly_amount, currency,
           period_start, period_end, status, created_at)
        VALUES (?, ?, 'STARTER', 3, 0, 'USD', ?, ?, 'PILOTE_GRATUIT', ?)`,
-    ).run(newId("sub"), companyId, now, plusDays(90), now);
+      )
+      .run(newId("sub"), companyId, now, plusDays(90), now);
   });
 
   const agencies = [
     { id: newId("agc"), name: "Gare de Limete", city: "Kinshasa", address: "Boulevard Lumumba, Limete" },
     { id: newId("agc"), name: "Agence Matadi", city: "Matadi", address: "Avenue du Port, Matadi" },
   ];
-  tx((t) => {
+  await tx(async (t) => {
     for (const agency of agencies) {
-      t.prepare(
-        `INSERT INTO agencies
+      await t
+        .prepare(
+          `INSERT INTO agencies
            (id, company_id, name, city, address, gps, opening_hours, status, ticket_sequence, created_at)
          VALUES (?, ?, ?, ?, ?, NULL, '05:00-19:00', 'ACTIVE', 0, ?)`,
-      ).run(agency.id, companyId, agency.name, agency.city, agency.address, now);
+        )
+        .run(agency.id, companyId, agency.name, agency.city, agency.address, now);
     }
   });
 
@@ -73,43 +79,49 @@ function main(): void {
     { phone: "+243810000005", name: "Contrôleur Transco", role: "CONTROLEUR", agency: agencies[0].id },
   ] as const;
 
-  tx((t) => {
+  await tx(async (t) => {
     for (const person of staff) {
       const userId = newId("usr");
-      t.prepare(
-        `INSERT INTO users (id, phone, name, password_hash, status, locale, created_at)
+      await t
+        .prepare(
+          `INSERT INTO users (id, phone, name, password_hash, status, locale, created_at)
          VALUES (?, ?, ?, ?, 'ACTIVE', 'fr', ?)`,
-      ).run(userId, person.phone, person.name, hashPassword(MOT_DE_PASSE_DEMO), now);
-      t.prepare(
-        `INSERT INTO user_roles (id, user_id, role, company_id, agency_id, created_at)
+        )
+        .run(userId, person.phone, person.name, hashPassword(MOT_DE_PASSE_DEMO), now);
+      await t
+        .prepare(
+          `INSERT INTO user_roles (id, user_id, role, company_id, agency_id, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
-      ).run(
-        newId("url"),
-        userId,
-        person.role,
-        person.role === "SUPER_ADMIN" ? null : companyId,
-        person.agency,
-        now,
-      );
+        )
+        .run(
+          newId("url"),
+          userId,
+          person.role,
+          person.role === "SUPER_ADMIN" ? null : companyId,
+          person.agency,
+          now,
+        );
       // §1.5 : « Un utilisateur cumule plusieurs rôles — un gérant est souvent
       // aussi guichetier — mais jamais dans la même session. »
       if (person.role === "GERANT_AGENCE") {
-        t.prepare(
-          `INSERT INTO user_roles (id, user_id, role, company_id, agency_id, created_at)
+        await t
+          .prepare(
+            `INSERT INTO user_roles (id, user_id, role, company_id, agency_id, created_at)
            VALUES (?, ?, 'GUICHETIER', ?, ?, ?)`,
-        ).run(newId("url"), userId, companyId, person.agency, now);
+          )
+          .run(newId("url"), userId, companyId, person.agency, now);
       }
     }
   });
 
-  const plan22 = createSeatMap({
+  const plan22 = await createSeatMap({
     companyId,
     name: "Autocar 2+2 — 60 places",
     rows: 15,
     layout: LAYOUT_PRESETS["2+2"],
     disabledSeats: [],
   });
-  const plan23 = createSeatMap({
+  const plan23 = await createSeatMap({
     companyId,
     name: "Bus 2+3 — 70 places (porte au rang 8)",
     rows: 14,
@@ -119,26 +131,26 @@ function main(): void {
   });
 
   const buses = [
-    createBus({ companyId, plateNumber: "KN 4512 AB", seatMapId: plan22.id, category: "VIP" }),
-    createBus({ companyId, plateNumber: "KN 7788 CD", seatMapId: plan22.id, category: "STANDARD" }),
-    createBus({ companyId, plateNumber: "KN 9021 EF", seatMapId: plan23.id, category: "STANDARD" }),
+    await createBus({ companyId, plateNumber: "KN 4512 AB", seatMapId: plan22.id, category: "VIP" }),
+    await createBus({ companyId, plateNumber: "KN 7788 CD", seatMapId: plan22.id, category: "STANDARD" }),
+    await createBus({ companyId, plateNumber: "KN 9021 EF", seatMapId: plan23.id, category: "STANDARD" }),
   ];
 
-  const kinMatadi = createRoute({
+  const kinMatadi = await createRoute({
     companyId,
     originCity: "Kinshasa",
     destinationCity: "Matadi",
     distanceKm: 352,
     durationEstMin: 330,
   });
-  const matadiKin = createRoute({
+  const matadiKin = await createRoute({
     companyId,
     originCity: "Matadi",
     destinationCity: "Kinshasa",
     distanceKm: 352,
     durationEstMin: 330,
   });
-  const kinKikwit = createRoute({
+  const kinKikwit = await createRoute({
     companyId,
     originCity: "Kinshasa",
     destinationCity: "Kikwit",
@@ -153,16 +165,17 @@ function main(): void {
   const trips: Array<{ label: string; id: string }> = [];
 
   /** Un départ déjà passé au moment du seed n'a aucun intérêt de démonstration. */
-  const plan = (
+  const plan = async (
     label: string,
     input: Parameters<typeof createTrip>[0],
-  ): void => {
+  ): Promise<void> => {
     if (new Date(input.departureDatetime).getTime() <= Date.now()) return;
-    trips.push({ label, id: createTrip(input).id });
+    const trip = await createTrip(input);
+    trips.push({ label, id: trip.id });
   };
 
   for (let day = 0; day <= 7; day++) {
-    plan(`Kinshasa→Matadi VIP J+${day}`, {
+    await plan(`Kinshasa→Matadi VIP J+${day}`, {
         companyId,
         routeId: kinMatadi.id,
         busId: buses[0].id,
@@ -172,7 +185,7 @@ function main(): void {
         prices: [{ category: "VIP", priceUsd: toMinor(25), priceCdf: toMinor(71250) }],
         quotas: quotas60,
     });
-    plan(`Kinshasa→Matadi standard J+${day}`, {
+    await plan(`Kinshasa→Matadi standard J+${day}`, {
         companyId,
         routeId: kinMatadi.id,
         busId: buses[1].id,
@@ -182,7 +195,7 @@ function main(): void {
         prices: [{ category: "STANDARD", priceUsd: toMinor(15), priceCdf: toMinor(42750) }],
         quotas: quotas60,
     });
-    plan(`Matadi→Kinshasa VIP J+${day}`, {
+    await plan(`Matadi→Kinshasa VIP J+${day}`, {
         companyId,
         routeId: matadiKin.id,
         busId: buses[0].id,
@@ -193,7 +206,7 @@ function main(): void {
         quotas: quotas60,
     });
     // §2.2 : un départ à remplissage, invisible en ligne, quota 100 % guichet.
-    plan(`Kinshasa→Kikwit à remplissage J+${day}`, {
+    await plan(`Kinshasa→Kikwit à remplissage J+${day}`, {
         companyId,
         routeId: kinKikwit.id,
         busId: buses[2].id,
@@ -206,13 +219,13 @@ function main(): void {
   }
   void quotas68;
 
-  const counts = db
-    .prepare(
+  const counts = (await db
+    .prepare<{ trajets: number; sieges: number; utilisateurs: number }>(
       `SELECT (SELECT COUNT(*) FROM trips) AS trajets,
               (SELECT COUNT(*) FROM trip_seats) AS sieges,
               (SELECT COUNT(*) FROM users) AS utilisateurs`,
     )
-    .get() as { trajets: number; sieges: number; utilisateurs: number };
+    .get()) as { trajets: number; sieges: number; utilisateurs: number };
 
   console.log("Jeu de démonstration créé.");
   console.log(`  Compagnie   : Transco Kin (${companyId})`);
@@ -230,4 +243,12 @@ function main(): void {
   console.log("En développement, le code OTP est affiché à l'écran.");
 }
 
-main();
+main()
+  .catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    const { closeDb } = await import("@/lib/db");
+    await closeDb();
+  });

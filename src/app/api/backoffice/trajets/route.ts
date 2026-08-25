@@ -10,7 +10,7 @@ export const GET = authed(
   async ({ request, session }) => {
     const limit = Math.min(Number(request.nextUrl.searchParams.get("limite") ?? 60), 200);
     return {
-      trajets: getDb()
+      trajets: await getDb()
         .prepare(
           `SELECT t.*, r.origin_city, r.destination_city, b.plate_number, b.category,
                   a.name AS agence,
@@ -44,7 +44,7 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
   }>(request);
 
   return {
-    trajet: createTrip({
+    trajet: await createTrip({
       companyId: session.companyId,
       routeId: input.ligneId,
       busId: input.busId,
@@ -65,7 +65,7 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
 /** DELETE — annulation d'un trajet, motif obligatoire et journalisé. */
 export const DELETE = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request, session }) => {
   const { trajetId, motif } = await body<{ trajetId: string; motif: string }>(request);
-  return cancelTrip({
+  return await cancelTrip({
     tripId: trajetId,
     reason: motif,
     actor: { userId: session.userId, role: session.activeRole, companyId: session.companyId },

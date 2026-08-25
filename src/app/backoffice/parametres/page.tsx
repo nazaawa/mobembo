@@ -16,10 +16,10 @@ export const dynamic = "force-dynamic";
  */
 export default async function Parametres() {
   const session = await currentSession();
-  const company = getCompany(session!.companyId!);
+  const company = await getCompany(session!.companyId!);
   const politique = companyPolicy(company);
 
-  const indetermines = getDb()
+  const indetermines = (await getDb()
     .prepare(
       `SELECT p.id, p.provider, p.amount, p.currency, p.payer_phone, p.created_at,
               b.buyer_name
@@ -28,7 +28,7 @@ export default async function Parametres() {
           AND b.trip_id IN (SELECT id FROM trips WHERE company_id = ?)
         ORDER BY p.created_at`,
     )
-    .all(session!.companyId) as Array<{
+    .all(session!.companyId)) as Array<{
     id: string;
     provider: string;
     amount: number;

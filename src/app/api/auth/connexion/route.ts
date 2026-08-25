@@ -9,9 +9,9 @@ export const POST = handler(async ({ request, ip, device }) => {
   const input = await body<{ phone: string; password: string; role?: Role; agencyId?: string }>(
     request,
   );
-  const { sessionId } = loginStaff({ ...input, ip, device });
+  const { sessionId } = await loginStaff({ ...input, ip, device });
 
-  const response = NextResponse.json({ session: readSession(sessionId) });
+  const response = NextResponse.json({ session: await readSession(sessionId) });
   response.cookies.set(SESSION_COOKIE, sealSession(sessionId), {
     httpOnly: true,
     sameSite: "lax",

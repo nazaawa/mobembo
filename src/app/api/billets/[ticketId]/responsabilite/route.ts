@@ -17,7 +17,7 @@ export const POST = authedWith<{ ticketId: string }>(
     const { situation, note } = await body<{ situation: LiabilitySituation; note?: string }>(
       request,
     );
-    return applyLiability({
+    return await applyLiability({
       ticketId: params.ticketId,
       situation,
       note,

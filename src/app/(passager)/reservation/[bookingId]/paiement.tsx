@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card, Field, Why, inputClass, buttonClass } from "@/components/ui";
 import { MOBILE_MONEY_PROVIDERS, PROVIDER_LABELS } from "@/lib/domain/types";
 import type { PaymentProviderId } from "@/lib/domain/types";
@@ -12,6 +13,20 @@ interface StatutPaiement {
   billets: Array<{ id: string }>;
 }
 
+class ErreurApi extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+// Le verrou de siège peut expirer entre l'ouverture de cette page et le clic
+// sur « Payer » (§2.5 : sept minutes, prolongées au démarrage du paiement,
+// mais la réservation elle-même peut dater d'avant). Dans ce cas précis,
+// retenter le paiement ne sert à rien : il faut reprendre la sélection.
+const CODES_VERROU_PERDU = ["VERROU_PERDU", "VERROU_EXPIRE", "RESERVATION_CLOSE"];
+
 /**
  * Reprise de paiement pour une réservation déjà créée (§2.5.5), sans
  * repasser par la sélection de siège. Même logique de sondage que le tunnel
@@ -20,10 +35,12 @@ interface StatutPaiement {
  */
 export function PaiementReprise({
   bookingId,
+  tripId,
   devise,
   telephone,
 }: {
   bookingId: string;
+  tripId: string;
   devise: Currency;
   telephone: string;
 }) {
@@ -31,6 +48,7 @@ export function PaiementReprise({
   const [operateur, setOperateur] = useState<PaymentProviderId>("MPESA");
   const [occupe, setOccupe] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [verrouPerdu, setVerrouPerdu] = useState(false);
   const [statut, setStatut] = useState<string | null>(null);
 
   const appel = async <T,>(url: string, init?: RequestInit): Promise<T> => {
@@ -39,7 +57,7 @@ export function PaiementReprise({
       headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message ?? "Erreur inattendue.");
+    if (!response.ok) throw new ErreurApi(data.erreur ?? "ERREUR_INTERNE", data.message ?? "Erreur inattendue.");
     return data as T;
   };
 
@@ -91,7 +109,13 @@ export function PaiementReprise({
         );
       }
     } catch (error) {
-      setErreur((error as Error).message);
+      if (error instanceof ErreurApi && CODES_VERROU_PERDU.includes(error.code)) {
+        setVerrouPerdu(true);
+        setStatut(null);
+        setErreur("Votre maintien de siège a expiré entre-temps. Reprenez la recherche pour choisir un nouveau siège — aucun débit n'a eu lieu.");
+      } else {
+        setErreur((error as Error).message);
+      }
     } finally {
       setOccupe(false);
     }
@@ -108,24 +132,32 @@ export function PaiementReprise({
         </p>
       )}
 
-      <Field label="Opérateur">
-        <select
-          className={inputClass}
-          value={operateur}
-          disabled={occupe}
-          onChange={(e) => setOperateur(e.target.value as PaymentProviderId)}
-        >
-          {MOBILE_MONEY_PROVIDERS.map((id) => (
-            <option key={id} value={id}>
-              {PROVIDER_LABELS[id]}
-            </option>
-          ))}
-        </select>
-      </Field>
+      {verrouPerdu ? (
+        <Link href={`/trajet/${tripId}`} className={`${buttonClass} w-full`}>
+          Reprendre la sélection de siège
+        </Link>
+      ) : (
+        <>
+          <Field label="Opérateur">
+            <select
+              className={inputClass}
+              value={operateur}
+              disabled={occupe}
+              onChange={(e) => setOperateur(e.target.value as PaymentProviderId)}
+            >
+              {MOBILE_MONEY_PROVIDERS.map((id) => (
+                <option key={id} value={id}>
+                  {PROVIDER_LABELS[id]}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-      <button type="button" className={`${buttonClass} mt-4 w-full`} disabled={occupe} onClick={payer}>
-        {occupe ? "Paiement en cours…" : `Payer avec ${PROVIDER_LABELS[operateur]} (${devise})`}
-      </button>
+          <button type="button" className={`${buttonClass} mt-4 w-full`} disabled={occupe} onClick={payer}>
+            {occupe ? "Paiement en cours…" : `Payer avec ${PROVIDER_LABELS[operateur]} (${devise})`}
+          </button>
+        </>
+      )}
 
       {statut === "INITIE" && (
         <p className="mt-3 rounded-lg border border-attention/40 bg-attention-doux px-3 py-2 text-sm text-attention">

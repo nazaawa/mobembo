@@ -20,11 +20,16 @@ export interface AuthedApiContext extends ApiContext {
 }
 
 function requestMeta(request: NextRequest): { ip: string | null; device: string | null } {
+  // `device_id` est VARCHAR(60) partout où il est persisté (cash_sessions,
+  // sync_log, boarding_scans) : sans troncature, un appelant qui omet l'en-tête
+  // dédié envoie le User-Agent complet du navigateur (bien plus long) et
+  // l'INSERT échoue en 500 au lieu du refus métier attendu.
+  const device = request.headers.get("x-mobembo-device") ?? request.headers.get("user-agent");
   return {
     ip:
       request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
       request.headers.get("x-real-ip"),
-    device: request.headers.get("x-mobembo-device") ?? request.headers.get("user-agent"),
+    device: device ? device.slice(0, 60) : null,
   };
 }
 

@@ -52,12 +52,15 @@ export default async function Reversements() {
       }
     | undefined;
 
-  const lignes = (await db
-    .prepare(
-      `SELECT * FROM settlement_lines WHERE settlement_id IN
-         (SELECT id FROM settlements WHERE company_id = ? ORDER BY period_end DESC LIMIT 1)`,
-    )
-    .all(companyId)) as Array<{ id: string; type: string; label: string; amount: number; currency: string }>;
+  // MariaDB refuse `IN (sous-requête ... LIMIT ...)` : `reversements` est déjà
+  // trié pareil (period_end DESC), donc son premier élément est le dernier
+  // reversement — inutile de le redemander via une sous-requête imbriquée.
+  const dernierReversementId = reversements[0]?.id ?? null;
+  const lignes = dernierReversementId
+    ? ((await db
+        .prepare(`SELECT * FROM settlement_lines WHERE settlement_id = ?`)
+        .all(dernierReversementId)) as Array<{ id: string; type: string; label: string; amount: number; currency: string }>)
+    : [];
 
   return (
     <div className="space-y-5">

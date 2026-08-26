@@ -48,7 +48,12 @@ export async function audit(entry: AuditEntry, db: DbHandle = getDb()): Promise<
 /** §2.11 Alertes automatiques du back-office. */
 export async function raiseAlert(
   alert: {
-    kind: "TROU_SEQUENCE" | "ECART_CAISSE" | "ANNULATIONS_ANORMALES" | "PAIEMENT_INDETERMINE";
+    kind:
+      | "TROU_SEQUENCE"
+      | "ECART_CAISSE"
+      | "ANNULATIONS_ANORMALES"
+      | "PAIEMENT_INDETERMINE"
+      | "PAIEMENT_CONFIRME_SANS_SIEGE";
     body: string;
     companyId?: string | null;
     agencyId?: string | null;

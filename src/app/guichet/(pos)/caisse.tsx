@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatMoney, type Currency } from "@/lib/core/money";
+import { deviceId } from "@/lib/client/offline";
 import { Field, inputClass, buttonClass, buttonDangerClass, Money } from "@/components/ui";
 
 /** §2.4.1 Ouverture — fond de caisse initial, horodatage, identification. */
@@ -23,7 +24,7 @@ export function OuvertureCaisse() {
         try {
           const response = await fetch("/api/guichet/caisse", {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: { "content-type": "application/json", "x-mobembo-device": deviceId() },
             body: JSON.stringify({
               fondInitial: Math.round(Number(fond) * 100),
               devise,
@@ -145,7 +146,7 @@ export function FermetureCaisse({
         try {
           const response = await fetch(`/api/guichet/caisse/${sessionId}/fermeture`, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: { "content-type": "application/json", "x-mobembo-device": deviceId() },
             body: JSON.stringify({ montantCompte: Math.round(Number(compte) * 100) }),
           });
           const data = await response.json();

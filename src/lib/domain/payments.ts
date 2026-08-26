@@ -2,7 +2,7 @@ import type { DbHandle } from "@/lib/db";
 import { getDb, tx } from "@/lib/db";
 import { newId } from "@/lib/core/ids";
 import { nowIso } from "@/lib/core/time";
-import { errors } from "@/lib/core/errors";
+import { errors, DomainError } from "@/lib/core/errors";
 import type { Currency } from "@/lib/core/money";
 import { formatMoney } from "@/lib/core/money";
 import { audit, raiseAlert } from "./audit";
@@ -212,8 +212,30 @@ export async function settlePayment(
       );
 
     let tickets: TicketRow[] = [];
+    let statutFinal: typeof status = status;
     if (status === "CONFIRME") {
-      tickets = await confirmBooking(db, payment.booking_id);
+      try {
+        tickets = await confirmBooking(db, payment.booking_id);
+      } catch (error) {
+        if (!(error instanceof DomainError) || error.code !== "VERROU_PERDU") throw error;
+        // Un paiement confirmé par l'opérateur ne doit jamais rester en
+        // limbo (§3.2 : « aucun incident ne disparaît silencieusement »).
+        // Ici l'opérateur a confirmé, mais le verrou du siège avait déjà
+        // expiré avant que la confirmation n'arrive — trop de temps écoulé
+        // entre l'initiation et la reprise du paiement. Impossible d'émettre
+        // le billet : le paiement bascule ECHOUE (pas de billet à délivrer)
+        // et un ticket support signale l'anomalie, un opérateur ayant débité
+        // sans contrepartie.
+        statutFinal = "ECHOUE";
+        await db
+          .prepare(`UPDATE payments SET status = 'ECHOUE', resolved_at = ? WHERE id = ?`)
+          .run(nowIso(), paymentId);
+        const booking = await getBooking(payment.booking_id, db);
+        const { holdId } = await bookingPassengers(booking.id, db);
+        await releaseLocks(db, booking.trip_id, holdId);
+        await db.prepare(`UPDATE bookings SET status = 'EXPIRE' WHERE id = ?`).run(booking.id);
+        await openLockLostSupportTicket(db, payment, error.message);
+      }
     } else if (status === "ECHOUE") {
       const booking = await getBooking(payment.booking_id, db);
       const { holdId } = await bookingPassengers(booking.id, db);
@@ -224,11 +246,11 @@ export async function settlePayment(
 
     await audit(
       {
-        action: `PAIEMENT_${status}`,
+        action: `PAIEMENT_${statutFinal}`,
         entity: "payment",
         entityId: paymentId,
         before: { status: payment.status },
-        after: { status },
+        after: { status: statutFinal },
       },
       db,
     );
@@ -280,6 +302,37 @@ export async function pollPayment(paymentId: string): Promise<PaymentRow> {
   }
 
   return (await db.prepare<PaymentRow>(`SELECT * FROM payments WHERE id = ?`).get(paymentId)) as PaymentRow;
+}
+
+async function openLockLostSupportTicket(db: DbHandle, payment: PaymentRow, raison: string): Promise<void> {
+  const already = (await db
+    .prepare(`SELECT COUNT(*) AS n FROM support_tickets WHERE reference = ?`)
+    .get(payment.id)) as { n: number };
+  if (already.n > 0) return;
+
+  await db
+    .prepare(
+      `INSERT INTO support_tickets (id, kind, reference, severity, body, status, created_at)
+     VALUES (?, 'PAIEMENT_CONFIRME_SANS_SIEGE', ?, 'BLOQUANTE', ?, 'OUVERT', ?)`,
+    )
+    .run(
+      newId("sup"),
+      payment.id,
+      `Paiement ${payment.id} (${payment.provider}, ref ${payment.provider_ref ?? "—"}) confirmé par ` +
+        `l'opérateur pour ${formatMoney(payment.amount, payment.currency as Currency)} depuis ` +
+        `${payment.payer_phone}, mais le siège n'était plus maintenu (${raison}). Aucun billet émis : ` +
+        `vérifier si l'opérateur a réellement débité et rembourser si nécessaire.`,
+      nowIso(),
+    );
+  await raiseAlert(
+    {
+      kind: "PAIEMENT_CONFIRME_SANS_SIEGE",
+      severity: "BLOQUANTE",
+      reference: payment.id,
+      body: `Paiement confirmé sans siège à livrer — vérification humaine requise.`,
+    },
+    db,
+  );
 }
 
 async function openIndeterminateSupportTicket(db: DbHandle, payment: PaymentRow): Promise<void> {

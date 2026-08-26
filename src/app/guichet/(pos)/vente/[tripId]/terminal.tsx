@@ -16,6 +16,7 @@ import {
 } from "@/components/ui";
 import { formatMoney, type Currency } from "@/lib/core/money";
 import {
+  deviceId,
   ecrireQuota,
   lireQuota,
   restantLocal,
@@ -191,7 +192,7 @@ export function TerminalVente({
       } else {
         const response = await fetch("/api/guichet/vente", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", "x-mobembo-device": deviceId() },
           body: JSON.stringify(vente),
         });
         const data = await response.json();

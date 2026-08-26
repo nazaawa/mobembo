@@ -2,6 +2,7 @@ import Link from "next/link";
 import { currentSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { activeCredits } from "@/lib/domain/cancellation";
+import { expireStaleBookings } from "@/lib/domain/bookings";
 import { formatDateTime } from "@/lib/core/time";
 import { TICKET_STATUS_LABELS, type TicketStatus } from "@/lib/domain/types";
 import { Card, Badge, Empty, Money, Table } from "@/components/ui";
@@ -43,6 +44,12 @@ export default async function MesBillets() {
       </Card>
     );
   }
+
+  // Bascule ici, à la lecture, les réservations dont le verrou de siège a
+  // expiré sans qu'aucun paiement n'ait été initié — sans ce nettoyage,
+  // une réservation morte reste affichée comme « en attente » indéfiniment
+  // (§3.1 : pas de tâche de fond, le nettoyage se fait au prochain accès).
+  await expireStaleBookings();
 
   const billets = await getDb()
     .prepare<LigneBillet>(

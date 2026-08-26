@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { currentSession } from "@/lib/auth/session";
 import { getBooking, tripDetail } from "@/lib/domain/repo";
-import { bookingPassengers } from "@/lib/domain/bookings";
+import { bookingPassengers, expireStaleBookings } from "@/lib/domain/bookings";
 import { formatDateTime } from "@/lib/core/time";
 import type { Currency } from "@/lib/core/money";
 import { Card, Money } from "@/components/ui";
@@ -27,6 +27,8 @@ export default async function PageReservation(props: PageProps<"/reservation/[bo
       </Card>
     );
   }
+
+  await expireStaleBookings();
 
   let booking;
   try {
@@ -101,6 +103,7 @@ export default async function PageReservation(props: PageProps<"/reservation/[bo
 
       <PaiementReprise
         bookingId={booking.id}
+        tripId={booking.trip_id}
         devise={booking.currency as Currency}
         telephone={session.phone}
       />

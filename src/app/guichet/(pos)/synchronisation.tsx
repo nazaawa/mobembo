@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  deviceId,
   file,
   retirer,
   marquerRefus,
@@ -59,7 +60,7 @@ export function Synchronisation() {
     try {
       const response = await fetch("/api/guichet/synchronisation", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-mobembo-device": deviceId() },
         body: JSON.stringify({ ventes: aEnvoyer }),
       });
       if (!response.ok) return;

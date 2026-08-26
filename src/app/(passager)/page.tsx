@@ -32,39 +32,40 @@ export default async function AccueilPassager() {
 
   return (
     <div>
-      <section className="relative -mx-4 -mt-6 min-h-[460px] overflow-hidden bg-navy text-white sm:mx-0 sm:-mt-2 sm:min-h-[540px] sm:rounded-[22px] lg:min-h-[570px]">
+      <section className="relative left-1/2 -mt-6 min-h-[540px] w-screen -translate-x-1/2 overflow-hidden bg-navy text-white sm:-mt-8 sm:min-h-[620px] lg:min-h-[660px]">
         <Image
           src="/images/mobembo-terminal-hero.png"
           alt="Autocar interurbain prêt au départ dans un terminal congolais"
           fill
           priority
           sizes="100vw"
-          className="animate-[hero-installation_1.1s_ease-out_both] object-cover object-[66%_center] sm:object-center"
+          className="animate-[hero-installation_1.1s_ease-out_both] object-cover object-[68%_center] sm:object-[62%_center] lg:object-center"
         />
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,22,45,0.96)_0%,rgba(8,22,45,0.8)_40%,rgba(8,22,45,0.2)_78%,rgba(8,22,45,0.08)_100%)]" />
-        <div className="relative z-10 mx-auto flex min-h-[460px] max-w-7xl flex-col justify-center px-5 pb-24 pt-10 sm:min-h-[540px] sm:px-10 sm:pb-32 sm:pt-14 lg:min-h-[570px] lg:px-14">
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,22,45,0.97)_0%,rgba(8,22,45,0.86)_38%,rgba(8,22,45,0.32)_70%,rgba(8,22,45,0.08)_100%)]" />
+        <div className="absolute inset-x-0 bottom-0 h-32 bg-[linear-gradient(180deg,transparent,rgba(8,22,45,0.42))]" />
+        <div className="relative z-10 mx-auto flex min-h-[540px] max-w-7xl flex-col justify-center px-4 pb-28 pt-12 sm:min-h-[620px] sm:px-6 sm:pb-36 lg:min-h-[660px]">
           <div className="max-w-[900px]">
-            <p className="mb-4 inline-flex animate-[leve-entree_0.6s_ease-out_both] items-center gap-2 rounded-[9px] border border-white/20 bg-navy/45 px-3 py-2 text-xs font-semibold text-white/85 backdrop-blur-sm">
+            <p className="mb-5 inline-flex animate-[leve-entree_0.6s_ease-out_both] items-center gap-2 text-sm font-semibold text-white/82">
               <span className="h-2 w-2 rounded-full bg-accent-clair" aria-hidden />
               Billetterie interurbaine · paiement Mobile Money
             </p>
-            <h1 className="max-w-[790px] animate-[leve-entree_0.6s_ease-out_both] font-heading text-[clamp(2.65rem,5.8vw,4.6rem)] font-bold leading-[0.98] tracking-[-0.02em] text-balance [animation-delay:90ms]">
+            <h1 className="max-w-[820px] animate-[leve-entree_0.6s_ease-out_both] text-balance font-heading text-[clamp(3rem,6.4vw,5.5rem)] font-bold leading-[0.96] tracking-[-0.03em] [animation-delay:90ms]">
               Votre prochain départ commence ici.
             </h1>
-            <p className="mt-5 max-w-[540px] animate-[leve-entree_0.6s_ease-out_both] text-base leading-7 text-white/78 sm:text-lg [animation-delay:170ms]">
+            <p className="mt-6 max-w-[560px] animate-[leve-entree_0.6s_ease-out_both] text-base leading-7 text-white/78 sm:text-xl sm:leading-8 [animation-delay:170ms]">
               Choisissez votre siège, payez par Mobile Money et embarquez avec votre billet QR.
             </p>
           </div>
         </div>
       </section>
 
-      <div id="recherche" className="relative z-20 mx-auto -mt-16 max-w-[1120px] scroll-mt-28 animate-[leve-entree_0.7s_ease-out_both] px-3 sm:-mt-20 sm:px-6 [animation-delay:260ms]">
+      <div id="recherche" className="relative z-20 mx-auto -mt-20 max-w-[1160px] scroll-mt-28 animate-[leve-entree_0.7s_ease-out_both] sm:-mt-24 sm:px-4 [animation-delay:260ms]">
         <SearchForm villes={villes} defaultDate={aujourdhui} hero />
       </div>
 
-      <section aria-labelledby="garanties" className="mt-16 overflow-hidden rounded-[14px] bg-white sm:mt-20">
+      <section aria-labelledby="garanties" className="relative left-1/2 mt-20 w-screen -translate-x-1/2 border-y border-bordure bg-white sm:mt-24">
         <h2 id="garanties" className="sr-only">Les garanties de votre réservation</h2>
-        <div className="grid md:grid-cols-3">
+        <div className="mx-auto grid max-w-7xl px-4 sm:px-6 md:grid-cols-3">
           <Guarantee icon={<SeatIcon />} title="Siège réellement protégé">
             Dès le paiement, votre place ne peut plus être vendue à quelqu&apos;un d&apos;autre, même au guichet.
           </Guarantee>
@@ -78,11 +79,11 @@ export default async function AccueilPassager() {
       </section>
 
       {axes.length > 0 && (
-        <section className="py-16 sm:py-20" aria-labelledby="axes-disponibles">
-          <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+        <section className="py-20 sm:py-28" aria-labelledby="axes-disponibles">
+          <div className="mb-9 flex flex-wrap items-end justify-between gap-5">
             <div>
-              <p className="text-sm font-semibold text-accent">Voyagez aujourd&apos;hui</p>
-              <h2 id="axes-disponibles" className="mt-1 font-heading text-3xl font-bold tracking-[-0.02em] text-navy sm:text-4xl">
+              <p className="text-sm font-semibold text-accent">Départs du jour</p>
+              <h2 id="axes-disponibles" className="mt-2 text-balance font-heading text-3xl font-bold tracking-[-0.02em] text-navy sm:text-5xl">
                 Quelques axes disponibles
               </h2>
             </div>
@@ -91,15 +92,14 @@ export default async function AccueilPassager() {
             </p>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-3">
-            {axes.map(({ origine, destination, trajets }, index) => {
+          <div className="grid gap-4 md:grid-cols-3">
+            {axes.map(({ origine, destination, trajets }) => {
               const premier = trajets[0];
               return (
                 <Link
                   key={`${origine}-${destination}`}
                   href={`/recherche?origine=${encodeURIComponent(origine)}&destination=${encodeURIComponent(destination)}&date=${aujourdhui}`}
-                  className="group flex min-h-36 animate-[leve-entree_0.6s_ease-out_both] flex-col justify-between rounded-[14px] border border-bordure bg-white p-5 ease-depart transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-transparent hover:shadow-[0_16px_36px_rgba(8,22,45,0.10)]"
-                  style={{ animationDelay: `${index * 70}ms` }}
+                  className="group flex min-h-44 flex-col justify-between rounded-[14px] bg-white p-6 shadow-[0_10px_30px_rgba(8,22,45,0.06)] transition-[transform,box-shadow] duration-300 ease-depart hover:-translate-y-1 hover:shadow-[0_18px_42px_rgba(8,22,45,0.11)]"
                 >
                   <div className="flex items-center gap-3 text-sm text-texte-doux">
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-accent-doux text-accent transition-transform duration-300 ease-depart group-hover:scale-110"><PinIcon /></span>
@@ -122,24 +122,29 @@ export default async function AccueilPassager() {
         </section>
       )}
 
-      <section id="comment-ca-marche" className="grid scroll-mt-28 overflow-hidden rounded-[18px] bg-navy text-white lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="p-7 sm:p-10 lg:p-14">
-          <p className="text-sm font-semibold text-accent-clair">Simple du début à la fin</p>
-          <h2 className="mt-2 max-w-xl font-heading text-3xl font-bold tracking-[-0.02em] sm:text-4xl">
-            Moins d&apos;attente. Plus de certitude avant le départ.
-          </h2>
-          <p className="mt-4 max-w-xl text-sm leading-6 text-white/68 sm:text-base">
-            Mobembo protège votre siège pendant le paiement et vous remet un billet vérifiable même sans réseau à l&apos;embarquement.
-          </p>
-          <Link href="/mes-billets" className="mt-7 inline-flex min-h-11 items-center gap-2 rounded-[10px] bg-white px-5 text-sm font-bold text-navy transition duration-300 ease-depart hover:-translate-y-0.5 hover:bg-white/90">
-            Retrouver mes billets <span aria-hidden>→</span>
-          </Link>
+      <section
+        id="comment-ca-marche"
+        className={`relative left-1/2 w-screen -translate-x-1/2 scroll-mt-28 bg-navy text-white ${axes.length === 0 ? "mt-20 sm:mt-28" : ""}`}
+      >
+        <div className="mx-auto grid max-w-7xl lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="px-4 py-16 sm:px-6 sm:py-20 lg:py-24 lg:pr-20">
+            <p className="text-sm font-semibold text-accent-clair">Simple du début à la fin</p>
+            <h2 className="mt-3 max-w-2xl text-balance font-heading text-3xl font-bold tracking-[-0.02em] sm:text-5xl">
+              Moins d&apos;attente. Plus de certitude avant le départ.
+            </h2>
+            <p className="mt-5 max-w-xl text-base leading-7 text-white/70">
+              Mobembo protège votre siège pendant le paiement et vous remet un billet vérifiable même sans réseau à l&apos;embarquement.
+            </p>
+            <Link href="/mes-billets" className="mt-8 inline-flex min-h-11 items-center gap-2 rounded-[10px] bg-white px-5 text-sm font-bold text-navy transition duration-300 ease-depart hover:-translate-y-0.5 hover:bg-white/90">
+              Retrouver mes billets <span aria-hidden>→</span>
+            </Link>
+          </div>
+          <ol className="divide-y divide-white/10 border-t border-white/10 lg:border-l lg:border-t-0">
+            <Step number="1" title="Cherchez" text="Choisissez vos villes et votre date." />
+            <Step number="2" title="Réservez" text="Sélectionnez le siège qui vous convient." />
+            <Step number="3" title="Embarquez" text="Présentez votre QR ou le code reçu par SMS." />
+          </ol>
         </div>
-        <ol className="divide-y divide-white/10 border-t border-white/10 lg:border-l lg:border-t-0">
-          <Step number="1" title="Cherchez" text="Choisissez vos villes et votre date." />
-          <Step number="2" title="Réservez" text="Sélectionnez le siège qui vous convient." />
-          <Step number="3" title="Embarquez" text="Présentez votre QR ou le code reçu par SMS." />
-        </ol>
       </section>
     </div>
   );
@@ -147,8 +152,8 @@ export default async function AccueilPassager() {
 
 function Guarantee({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
-    <div className="group flex gap-4 border-b border-bordure p-6 transition-colors duration-300 ease-depart last:border-b-0 hover:bg-accent-doux/40 md:border-b-0 md:border-r md:last:border-r-0 sm:p-7">
-      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[10px] bg-accent-doux text-accent transition-transform duration-300 ease-depart group-hover:scale-110">{icon}</span>
+    <div className="group flex gap-4 border-b border-bordure py-7 transition-colors duration-300 ease-depart last:border-b-0 md:border-b-0 md:border-r md:px-7 md:last:border-r-0 md:first:pl-0 md:last:pr-0 sm:py-8 lg:px-10 lg:first:pl-0 lg:last:pr-0">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[10px] bg-accent-doux text-accent transition-transform duration-300 ease-depart group-hover:scale-105">{icon}</span>
       <div>
         <h3 className="font-heading font-bold text-navy">{title}</h3>
         <p className="mt-1.5 text-sm leading-6 text-texte-doux">{children}</p>
@@ -159,9 +164,9 @@ function Guarantee({ icon, title, children }: { icon: React.ReactNode; title: st
 
 function Step({ number, title, text }: { number: string; title: string; text: string }) {
   return (
-    <li className="flex gap-4 p-7 transition-colors duration-300 ease-depart hover:bg-white/[0.04] sm:px-9 sm:py-8">
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent text-sm font-bold">{number}</span>
-      <div><p className="font-heading font-bold">{title}</p><p className="mt-1 text-sm text-white/58">{text}</p></div>
+    <li className="flex min-h-36 items-center gap-5 px-4 py-8 transition-colors duration-300 ease-depart hover:bg-white/[0.04] sm:px-9">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent text-sm font-bold">{number}</span>
+      <div><p className="font-heading text-lg font-bold">{title}</p><p className="mt-1 text-sm leading-6 text-white/62">{text}</p></div>
     </li>
   );
 }

@@ -71,6 +71,16 @@ body {
   outline-offset: 3px;
 }
 
+/* Le conteneur porte le focus visible des champs du hero. Le contrôle natif
+   reste actif au clavier, mais ne dessine pas un second rectangle intérieur. */
+.hero-search-field :is(input, select):focus,
+.hero-search-field :is(input, select):focus-visible {
+  border-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+}
+
 /* Entrée légère du premier écran (hero, recherche) : un seul mouvement,
    jamais en boucle — cf. DESIGN.md « Don't ajouter de décor gratuit ». */
 @keyframes leve-entree {

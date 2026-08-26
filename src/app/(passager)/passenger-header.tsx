@@ -8,6 +8,7 @@ import { MobemboLogo } from "@/components/brand";
 const navigation = [
   { href: "/#recherche", label: "Réserver" },
   { href: "/#axes-disponibles", label: "Destinations" },
+  { href: "/#agences-partenaires", label: "Pour les agences" },
   { href: "/#comment-ca-marche", label: "Comment ça marche" },
 ] as const;
 

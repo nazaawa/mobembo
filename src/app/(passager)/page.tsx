@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { knownCities, searchTrips } from "@/lib/domain/planning";
+import { knownCities, publishedRoutes } from "@/lib/domain/planning";
 import { todayInKinshasa } from "@/lib/core/time";
 import { SearchForm } from "./search-form";
 import { Money } from "@/components/ui";
@@ -17,18 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function AccueilPassager() {
   const villes = await knownCities();
   const aujourdhui = todayInKinshasa();
-  const axesCandidats = [
-    ["Kinshasa", "Matadi"],
-    ["Kinshasa", "Kikwit"],
-    ["Matadi", "Kinshasa"],
-  ].filter(([origine, destination]) => villes.includes(origine) && villes.includes(destination));
-  const axes = await Promise.all(
-    axesCandidats.map(async ([origine, destination]) => ({
-      origine,
-      destination,
-      trajets: await searchTrips({ origin: origine, destination, day: aujourdhui }),
-    })),
-  );
+  const axes = await publishedRoutes(aujourdhui);
 
   return (
     <div>
@@ -47,13 +36,13 @@ export default async function AccueilPassager() {
           <div className="max-w-[900px]">
             <p className="mb-5 inline-flex animate-[leve-entree_0.6s_ease-out_both] items-center gap-2 text-sm font-semibold text-white/82">
               <span className="h-2 w-2 rounded-full bg-accent-clair" aria-hidden />
-              Billetterie interurbaine · paiement Mobile Money
+              Billetterie multi-compagnies · paiement Mobile Money
             </p>
             <h1 className="max-w-[820px] animate-[leve-entree_0.6s_ease-out_both] text-balance font-heading text-[clamp(3rem,6.4vw,5.5rem)] font-bold leading-[0.96] tracking-[-0.03em] [animation-delay:90ms]">
               Votre prochain départ commence ici.
             </h1>
             <p className="mt-6 max-w-[560px] animate-[leve-entree_0.6s_ease-out_both] text-base leading-7 text-white/78 sm:text-xl sm:leading-8 [animation-delay:170ms]">
-              Choisissez votre siège, payez par Mobile Money et embarquez avec votre billet QR.
+              Comparez les départs, choisissez votre siège et embarquez avec votre billet QR.
             </p>
           </div>
         </div>
@@ -78,53 +67,84 @@ export default async function AccueilPassager() {
         </div>
       </section>
 
-      {axes.length > 0 && (
-        <section className="py-20 sm:py-28" aria-labelledby="axes-disponibles">
-          <div className="mb-9 flex flex-wrap items-end justify-between gap-5">
-            <div>
-              <p className="text-sm font-semibold text-accent">Départs du jour</p>
-              <h2 id="axes-disponibles" className="mt-2 text-balance font-heading text-3xl font-bold tracking-[-0.02em] text-navy sm:text-5xl">
-                Quelques axes disponibles
-              </h2>
-            </div>
-            <p className="max-w-md text-sm leading-6 text-texte-doux">
-              Les horaires et places sont vérifiés au moment de la recherche.
-            </p>
+      <section className="py-20 sm:py-28" aria-labelledby="axes-disponibles">
+        <div className="mb-9 flex flex-wrap items-end justify-between gap-5">
+          <div>
+            <p className="text-sm font-semibold text-accent">Réseau multi-compagnies</p>
+            <h2 id="axes-disponibles" className="mt-2 text-balance font-heading text-3xl font-bold tracking-[-0.02em] text-navy sm:text-5xl">
+              Les destinations publiées
+            </h2>
           </div>
+          <p className="max-w-md text-sm leading-6 text-texte-doux">
+            Chaque compagnie publie ses propres lignes. Les horaires, prix et places sont vérifiés au moment de la recherche.
+          </p>
+        </div>
 
+        {axes.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-3">
-            {axes.map(({ origine, destination, trajets }) => {
-              const premier = trajets[0];
-              return (
-                <Link
-                  key={`${origine}-${destination}`}
-                  href={`/recherche?origine=${encodeURIComponent(origine)}&destination=${encodeURIComponent(destination)}&date=${aujourdhui}`}
-                  className="group flex min-h-44 flex-col justify-between rounded-[14px] bg-white p-6 shadow-[0_10px_30px_rgba(8,22,45,0.06)] transition-[transform,box-shadow] duration-300 ease-depart hover:-translate-y-1 hover:shadow-[0_18px_42px_rgba(8,22,45,0.11)]"
-                >
-                  <div className="flex items-center gap-3 text-sm text-texte-doux">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-accent-doux text-accent transition-transform duration-300 ease-depart group-hover:scale-110"><PinIcon /></span>
-                    {trajets.length > 0 ? `${trajets.length} départ${trajets.length > 1 ? "s" : ""}` : "Consulter les départs"}
+            {axes.map(({ origine, destination, departs, prixMinimumUsd }) => (
+              <Link
+                key={`${origine}-${destination}`}
+                href={`/recherche?origine=${encodeURIComponent(origine)}&destination=${encodeURIComponent(destination)}&date=${aujourdhui}`}
+                className="group flex min-h-44 flex-col justify-between rounded-[14px] bg-white p-6 shadow-[0_10px_30px_rgba(8,22,45,0.06)] transition-[transform,box-shadow] duration-300 ease-depart hover:-translate-y-1 hover:shadow-[0_18px_42px_rgba(8,22,45,0.11)]"
+              >
+                <div className="flex items-center gap-3 text-sm text-texte-doux">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-accent-doux text-accent transition-transform duration-300 ease-depart group-hover:scale-110"><PinIcon /></span>
+                  {departs > 0 ? `${departs} départ${departs > 1 ? "s" : ""} aujourd’hui` : "Ligne publiée"}
+                </div>
+                <div className="mt-7 flex items-end justify-between gap-4">
+                  <div>
+                    <p className="font-heading text-lg font-bold text-navy">{origine}</p>
+                    <p className="mt-0.5 text-sm text-texte-doux">vers {destination}</p>
                   </div>
-                  <div className="mt-7 flex items-end justify-between gap-4">
-                    <div>
-                      <p className="font-heading text-lg font-bold text-navy">{origine}</p>
-                      <p className="mt-0.5 text-sm text-texte-doux">vers {destination}</p>
-                    </div>
-                    <div className="text-right">
-                      {premier && <p className="text-sm font-bold text-navy">dès <Money amount={premier.prixUsd} currency="USD" /></p>}
-                      <span className="mt-1 inline-flex text-sm font-semibold text-accent">Voir <span className="ml-1 transition-transform duration-300 ease-depart group-hover:translate-x-1">→</span></span>
-                    </div>
+                  <div className="text-right">
+                    {prixMinimumUsd !== null && <p className="text-sm font-bold text-navy">dès <Money amount={prixMinimumUsd} currency="USD" /></p>}
+                    <span className="mt-1 inline-flex text-sm font-semibold text-accent">Voir <span className="ml-1 transition-transform duration-300 ease-depart group-hover:translate-x-1">→</span></span>
                   </div>
-                </Link>
-              );
-            })}
+                </div>
+              </Link>
+            ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="flex flex-col items-start justify-between gap-6 rounded-[14px] bg-white px-6 py-8 shadow-[0_10px_30px_rgba(8,22,45,0.05)] sm:flex-row sm:items-center sm:px-8">
+            <div className="max-w-2xl">
+              <h3 className="font-heading text-xl font-bold text-navy">Les premières lignes seront bientôt publiées</h3>
+              <p className="mt-2 text-sm leading-6 text-texte-doux">
+                Dès qu&apos;une compagnie ajoute ses destinations et ouvre un départ à la vente, son axe apparaît automatiquement ici.
+              </p>
+            </div>
+            <Link href="/guichet/connexion" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-[10px] border border-bordure px-4 text-sm font-bold text-navy transition hover:border-accent hover:text-accent">
+              Espace professionnel <span aria-hidden>→</span>
+            </Link>
+          </div>
+        )}
+      </section>
+
+      <section id="agences-partenaires" aria-labelledby="titre-agences" className="relative left-1/2 w-screen -translate-x-1/2 scroll-mt-28 border-y border-bordure bg-white">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-20">
+          <div>
+            <p className="text-sm font-semibold text-accent">Pour les compagnies de transport</p>
+            <h2 id="titre-agences" className="mt-3 max-w-2xl text-balance font-heading text-3xl font-bold tracking-[-0.02em] text-navy sm:text-5xl">
+              Une seule plateforme pour toutes vos agences.
+            </h2>
+            <p className="mt-5 max-w-2xl text-base leading-7 text-texte-doux">
+              Mobembo accueille plusieurs compagnies. Chacune pilote ses agences, ajoute ses destinations, planifie ses départs et suit ses ventes depuis un espace sécurisé.
+            </p>
+            <Link href="/guichet/connexion" className="mt-8 inline-flex min-h-12 items-center gap-2 rounded-[10px] bg-navy px-5 text-sm font-bold text-white transition duration-300 ease-depart hover:-translate-y-0.5 hover:bg-navy-profond">
+              Accéder à l&apos;espace professionnel <span aria-hidden>→</span>
+            </Link>
+          </div>
+          <ol className="divide-y divide-bordure border-y border-bordure">
+            <PartnerStep number="1" title="Gérez vos agences" text="Centralisez les points de vente, les équipes et les caisses de chaque agence." />
+            <PartnerStep number="2" title="Ajoutez vos destinations" text="Publiez vos lignes, vos bus, vos horaires et les places ouvertes à la vente en ligne." />
+            <PartnerStep number="3" title="Suivez toutes les ventes" text="Guichet et réservation en ligne partagent la même disponibilité de sièges." />
+          </ol>
+        </div>
+      </section>
 
       <section
         id="comment-ca-marche"
-        className={`relative left-1/2 w-screen -translate-x-1/2 scroll-mt-28 bg-navy text-white ${axes.length === 0 ? "mt-20 sm:mt-28" : ""}`}
+        className="relative left-1/2 mt-20 w-screen -translate-x-1/2 scroll-mt-28 bg-navy text-white sm:mt-28"
       >
         <div className="mx-auto grid max-w-7xl lg:grid-cols-[1.15fr_0.85fr]">
           <div className="px-4 py-16 sm:px-6 sm:py-20 lg:py-24 lg:pr-20">
@@ -167,6 +187,18 @@ function Step({ number, title, text }: { number: string; title: string; text: st
     <li className="flex min-h-36 items-center gap-5 px-4 py-8 transition-colors duration-300 ease-depart hover:bg-white/[0.04] sm:px-9">
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent text-sm font-bold">{number}</span>
       <div><p className="font-heading text-lg font-bold">{title}</p><p className="mt-1 text-sm leading-6 text-white/62">{text}</p></div>
+    </li>
+  );
+}
+
+function PartnerStep({ number, title, text }: { number: string; title: string; text: string }) {
+  return (
+    <li className="grid grid-cols-[2rem_minmax(0,1fr)] gap-4 py-6">
+      <span className="text-sm font-bold text-accent">{number}</span>
+      <div>
+        <h3 className="font-heading text-lg font-bold text-navy">{title}</h3>
+        <p className="mt-1 text-sm leading-6 text-texte-doux">{text}</p>
+      </div>
     </li>
   );
 }

@@ -374,11 +374,52 @@ export async function searchTrips(params: {
     .all(params.origin, params.destination, start, end);
 }
 
+export interface PublishedRouteSummary {
+  origine: string;
+  destination: string;
+  departs: number;
+  prixMinimumUsd: number | null;
+}
+
+/**
+ * Axes réellement publiés par l'ensemble des compagnies actives. La page
+ * passager ne privilégie aucune compagnie et ne code aucune destination en dur.
+ */
+export async function publishedRoutes(
+  day: string,
+  limit = 3,
+  db: DbHandle = getDb(),
+): Promise<PublishedRouteSummary[]> {
+  const { start, end } = dayBounds(day);
+  return db
+    .prepare<PublishedRouteSummary>(
+      `SELECT r.origin_city AS origine, r.destination_city AS destination,
+              COUNT(DISTINCT t.id) AS departs,
+              MIN(p.price_usd) AS prixMinimumUsd
+         FROM routes r
+         JOIN companies c ON c.id = r.company_id AND c.status = 'ACTIVE'
+         LEFT JOIN trips t ON t.route_id = r.id
+          AND t.departure_datetime >= ? AND t.departure_datetime < ?
+          AND t.status IN ('PLANIFIE','EN_VENTE')
+          AND t.departure_mode = 'HORAIRE_FIXE'
+         LEFT JOIN buses b ON b.id = t.bus_id
+         LEFT JOIN trip_prices p ON p.trip_id = t.id AND p.category = b.category
+        GROUP BY r.origin_city, r.destination_city
+        ORDER BY departs DESC, r.origin_city, r.destination_city
+        LIMIT ?`,
+    )
+    .all(start, end, limit);
+}
+
 export async function knownCities(db: DbHandle = getDb()): Promise<string[]> {
   const rows = await db
     .prepare<{ city: string }>(
-      `SELECT origin_city AS city FROM routes
-       UNION SELECT destination_city FROM routes ORDER BY city`,
+      `SELECT r.origin_city AS city FROM routes r
+         JOIN companies c ON c.id = r.company_id WHERE c.status = 'ACTIVE'
+       UNION
+       SELECT r.destination_city FROM routes r
+         JOIN companies c ON c.id = r.company_id WHERE c.status = 'ACTIVE'
+       ORDER BY city`,
     )
     .all();
   return rows.map((r) => r.city);

@@ -23,6 +23,22 @@ export function SearchForm({
     initial?.destination ?? villes.find((v) => v !== (initial?.origine ?? villes[0])) ?? "",
   );
   const [date, setDate] = useState(initial?.date ?? defaultDate);
+  const rechercheDisponible = Boolean(
+    villes.length >= 2 && origine && destination && origine !== destination && date,
+  );
+
+  const changerOrigine = (nouvelleOrigine: string) => {
+    setOrigine(nouvelleOrigine);
+    if (destination === nouvelleOrigine) {
+      setDestination(villes.find((ville) => ville !== nouvelleOrigine) ?? "");
+    }
+  };
+
+  const soumettre = () => {
+    if (!rechercheDisponible) return;
+    const params = new URLSearchParams({ origine, destination, date });
+    router.push(`/recherche?${params}`);
+  };
 
   if (hero) {
     return (
@@ -30,8 +46,7 @@ export function SearchForm({
         className="rounded-[14px] bg-white p-4 shadow-[0_28px_70px_rgba(8,22,45,0.2)] sm:p-6"
         onSubmit={(event) => {
           event.preventDefault();
-          const params = new URLSearchParams({ origine, destination, date });
-          router.push(`/recherche?${params}`);
+          soumettre();
         }}
       >
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
@@ -39,11 +54,18 @@ export function SearchForm({
             <span className="h-2.5 w-2.5 rounded-full bg-accent" aria-hidden />
             Aller simple
           </div>
-          <p className="text-xs text-texte-doux">Même prix qu&apos;au guichet</p>
+          <p className="text-xs text-texte-doux">Plusieurs compagnies, une seule recherche</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_48px_1fr_0.9fr_0.82fr] lg:items-end">
           <HeroField label="Départ" icon={<PinIcon />} endIcon={<ChevronIcon />}>
-            <select value={origine} onChange={(e) => setOrigine(e.target.value)}>
+            <select
+              value={origine}
+              disabled={villes.length === 0}
+              required
+              aria-label="Ville de départ"
+              onChange={(e) => changerOrigine(e.target.value)}
+            >
+              {villes.length === 0 && <option value="">Aucune ville publiée</option>}
               {villes.map((ville) => <option key={ville}>{ville}</option>)}
             </select>
           </HeroField>
@@ -51,7 +73,8 @@ export function SearchForm({
           <button
             type="button"
             aria-label="Inverser les villes de départ et d'arrivée"
-            className="hidden h-12 w-12 items-center justify-center self-end rounded-[10px] bg-surface-alt text-navy transition duration-300 ease-depart hover:bg-accent-doux hover:text-accent lg:flex"
+            className="hidden h-12 w-12 items-center justify-center self-end rounded-[10px] bg-surface-alt text-navy transition duration-300 ease-depart hover:bg-accent-doux hover:text-accent disabled:cursor-not-allowed disabled:opacity-45 lg:flex"
+            disabled={!origine || !destination}
             onClick={() => {
               setOrigine(destination);
               setDestination(origine);
@@ -61,8 +84,15 @@ export function SearchForm({
           </button>
 
           <HeroField label="Arrivée" icon={<PinIcon />} endIcon={<ChevronIcon />}>
-            <select value={destination} onChange={(e) => setDestination(e.target.value)}>
-              {villes.map((ville) => <option key={ville}>{ville}</option>)}
+            <select
+              value={destination}
+              disabled={villes.length < 2}
+              required
+              aria-label="Ville d’arrivée"
+              onChange={(e) => setDestination(e.target.value)}
+            >
+              {villes.length < 2 && <option value="">Aucune destination publiée</option>}
+              {villes.filter((ville) => ville !== origine).map((ville) => <option key={ville}>{ville}</option>)}
             </select>
           </HeroField>
 
@@ -71,18 +101,30 @@ export function SearchForm({
               type="date"
               value={date}
               min={defaultDate}
+              required
               onChange={(e) => setDate(e.target.value)}
             />
           </HeroField>
 
           <button
             type="submit"
-            className="inline-flex h-[60px] w-full items-center justify-center gap-2 rounded-[10px] bg-accent px-5 text-sm font-bold text-white transition duration-300 ease-depart hover:-translate-y-0.5 hover:bg-accent-profond disabled:opacity-50 sm:col-span-2 lg:col-span-1"
+            disabled={!rechercheDisponible}
+            className="inline-flex h-[60px] w-full items-center justify-center gap-2 rounded-[10px] bg-accent px-5 text-sm font-bold text-white transition duration-300 ease-depart hover:-translate-y-0.5 hover:bg-accent-profond disabled:cursor-not-allowed disabled:translate-y-0 disabled:bg-bordure disabled:text-texte-doux sm:col-span-2 lg:col-span-1"
           >
-            Rechercher
-            <ArrowIcon />
+            {rechercheDisponible ? "Rechercher" : "Aucun trajet publié"}
+            {rechercheDisponible && <ArrowIcon />}
           </button>
         </div>
+        {!rechercheDisponible && (
+          <p role="status" className="mt-4 rounded-[10px] bg-surface-alt px-4 py-3 text-sm leading-6 text-texte-doux">
+            Les villes apparaîtront ici dès qu&apos;une compagnie aura publié ses lignes sur Mobembo.
+          </p>
+        )}
+        <ul aria-label="Garanties de la recherche" className="mt-5 grid gap-2 border-t border-bordure pt-4 text-xs font-medium text-texte-doux sm:grid-cols-3">
+          <TrustItem>Siège protégé après paiement</TrustItem>
+          <TrustItem>Billet reçu par SMS et QR</TrustItem>
+          <TrustItem>Même prix qu&apos;au guichet</TrustItem>
+        </ul>
       </form>
     );
   }
@@ -92,12 +134,18 @@ export function SearchForm({
       className={compact ? "grid gap-3 sm:grid-cols-4" : "grid gap-4 sm:grid-cols-2"}
       onSubmit={(event) => {
         event.preventDefault();
-        const params = new URLSearchParams({ origine, destination, date });
-        router.push(`/recherche?${params}`);
+        soumettre();
       }}
     >
       <Field label="Ville de départ">
-        <select className={inputClass} value={origine} onChange={(e) => setOrigine(e.target.value)}>
+        <select
+          className={inputClass}
+          value={origine}
+          disabled={villes.length === 0}
+          required
+          onChange={(e) => changerOrigine(e.target.value)}
+        >
+          {villes.length === 0 && <option value="">Aucune ville publiée</option>}
           {villes.map((ville) => (
             <option key={ville} value={ville}>
               {ville}
@@ -110,9 +158,12 @@ export function SearchForm({
         <select
           className={inputClass}
           value={destination}
+          disabled={villes.length < 2}
+          required
           onChange={(e) => setDestination(e.target.value)}
         >
-          {villes.map((ville) => (
+          {villes.length < 2 && <option value="">Aucune destination publiée</option>}
+          {villes.filter((ville) => ville !== origine).map((ville) => (
             <option key={ville} value={ville}>
               {ville}
             </option>
@@ -126,16 +177,33 @@ export function SearchForm({
           className={inputClass}
           value={date}
           min={defaultDate}
+          required
           onChange={(e) => setDate(e.target.value)}
         />
       </Field>
 
       <div className={compact ? "flex items-end" : "flex items-end sm:col-span-2"}>
-        <button type="submit" className={`${buttonClass} w-full`}>
-          Rechercher
+        <button type="submit" disabled={!rechercheDisponible} className={`${buttonClass} w-full`}>
+          {rechercheDisponible ? "Rechercher" : "Aucun trajet publié"}
         </button>
       </div>
+      {!rechercheDisponible && (
+        <p role="status" className="text-sm text-texte-doux sm:col-span-2">
+          Aucune compagnie n&apos;a encore publié de ligne disponible.
+        </p>
+      )}
     </form>
+  );
+}
+
+function TrustItem({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-center gap-2">
+      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-succes-doux text-succes" aria-hidden>
+        <CheckIcon />
+      </span>
+      {children}
+    </li>
   );
 }
 
@@ -182,4 +250,8 @@ function ChevronIcon() {
 
 function ArrowIcon() {
   return <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>;
+}
+
+function CheckIcon() {
+  return <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2"><path d="m3 8 3 3 7-7"/></svg>;
 }

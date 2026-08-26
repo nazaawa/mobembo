@@ -49,6 +49,13 @@ const GROUPES: Array<{ titre: string; sous: string; routes: Route[] }> = [
         description: "Bascule de casquette. Tracée au journal d'audit.",
         reference: "§1.5",
       },
+      {
+        methode: "POST",
+        chemin: "/api/auth/compagnie",
+        role: "SUPER_ADMIN",
+        description: "Sélectionne explicitement la compagnie administrée.",
+        reference: "§1.5",
+      },
       { methode: "GET", chemin: "/api/auth/moi", role: "public", description: "Session courante.", reference: "—" },
       { methode: "POST", chemin: "/api/auth/deconnexion", role: "authentifié", description: "Révoque la session.", reference: "—" },
     ],
@@ -89,14 +96,14 @@ const GROUPES: Array<{ titre: string; sous: string; routes: Route[] }> = [
       {
         methode: "POST",
         chemin: "/api/reservations",
-        role: "public",
-        description: "Crée la réservation. Plusieurs sièges, un seul paiement.",
+        role: "PASSAGER",
+        description: "Crée la réservation pour le numéro vérifié par OTP. Plusieurs sièges, un seul paiement.",
         reference: "§2.5.4",
       },
       {
         methode: "GET",
         chemin: "/api/reservations/{bookingId}",
-        role: "public",
+        role: "PASSAGER",
         description: "Réservation, billets et paiements associés.",
         reference: "—",
       },
@@ -109,7 +116,7 @@ const GROUPES: Array<{ titre: string; sous: string; routes: Route[] }> = [
       {
         methode: "POST",
         chemin: "/api/paiements",
-        role: "public",
+        role: "PASSAGER",
         description:
           "Initie un débit. { reservationId, operateur, telephone, cleIdempotence }. Un rejeu de clé ne débite jamais deux fois.",
         reference: "§3.2",
@@ -117,7 +124,7 @@ const GROUPES: Array<{ titre: string; sous: string; routes: Route[] }> = [
       {
         methode: "GET",
         chemin: "/api/paiements/{paymentId}/statut",
-        role: "public",
+        role: "PASSAGER",
         description:
           "Interroge l'opérateur. Après 5 min sans réponse : INDETERMINE, siège maintenu verrouillé, ticket support ouvert.",
         reference: "§3.2",
@@ -146,7 +153,7 @@ const GROUPES: Array<{ titre: string; sous: string; routes: Route[] }> = [
       {
         methode: "GET",
         chemin: "/api/billets/{ticketId}",
-        role: "public",
+        role: "PASSAGER",
         description: "Billet, trajet, grille de renoncement et éligibilité à la revente.",
         reference: "§2.9",
       },
@@ -185,6 +192,26 @@ const GROUPES: Array<{ titre: string; sous: string; routes: Route[] }> = [
         role: "GERANT_AGENCE",
         description: "Applique la grille de responsabilité : remboursement, avoir, imputation.",
         reference: "§2.10",
+      },
+    ],
+  },
+  {
+    titre: "Partenaires",
+    sous: "Candidature publique puis validation par Mobembo.",
+    routes: [
+      {
+        methode: "POST",
+        chemin: "/api/partenaires/candidatures",
+        role: "public",
+        description: "Dépose la demande d'une compagnie et de sa première agence.",
+        reference: "Onboarding",
+      },
+      {
+        methode: "POST",
+        chemin: "/api/administration/candidatures/{applicationId}",
+        role: "SUPER_ADMIN",
+        description: "Approuve ou refuse. L'approbation crée compagnie, agence et direction.",
+        reference: "Onboarding",
       },
     ],
   },

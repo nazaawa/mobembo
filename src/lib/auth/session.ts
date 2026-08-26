@@ -184,6 +184,48 @@ export function assertCompanyScope(session: Session, companyId: string): void {
   }
 }
 
+/**
+ * Résout le contexte compagnie d'une requête sans permettre à un utilisateur
+ * de remplacer son périmètre par un identifiant fourni dans l'URL.
+ */
+export function companyScope(session: Session, requestedCompanyId?: string | null): string {
+  if (session.activeRole === "SUPER_ADMIN") {
+    const selected = requestedCompanyId ?? session.companyId;
+    if (!selected) throw errors.invalid("Sélectionnez d'abord une compagnie.");
+    return selected;
+  }
+  if (!session.companyId) throw errors.forbidden("Aucune compagnie rattachée à ce rôle.");
+  if (requestedCompanyId && requestedCompanyId !== session.companyId) {
+    throw errors.forbidden("Cette compagnie ne fait pas partie de votre périmètre.");
+  }
+  return session.companyId;
+}
+
+/** Sélection de contexte réservée au super-administrateur de la plateforme. */
+export async function selectCompanyContext(
+  db: DbHandle,
+  session: Session,
+  companyId: string,
+): Promise<void> {
+  if (session.activeRole !== "SUPER_ADMIN") throw errors.forbidden();
+  const company = await db.prepare<{ id: string }>(`SELECT id FROM companies WHERE id = ?`).get(companyId);
+  if (!company) throw errors.notFound("Compagnie");
+  await db.prepare(`UPDATE auth_sessions SET company_id = ?, agency_id = NULL WHERE id = ?`).run(companyId, session.id);
+  await audit(
+    {
+      userId: session.userId,
+      role: session.activeRole,
+      companyId,
+      action: "SELECTION_COMPAGNIE",
+      entity: "auth_session",
+      entityId: session.id,
+      before: { companyId: session.companyId },
+      after: { companyId },
+    },
+    db,
+  );
+}
+
 export function assertAgencyScope(session: Session, agencyId: string): void {
   if (session.activeRole === "SUPER_ADMIN" || session.activeRole === "ADMIN_COMPAGNIE") return;
   if (session.agencyId !== agencyId) {

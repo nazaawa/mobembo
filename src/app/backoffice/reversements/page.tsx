@@ -1,4 +1,5 @@
 import { currentSession } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { currentSettlementPeriod } from "@/lib/domain/settlements";
 import { formatDateTime } from "@/lib/core/time";
@@ -29,6 +30,7 @@ interface Reversement {
  */
 export default async function Reversements() {
   const session = await currentSession();
+  if (!session || !["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session.activeRole)) redirect("/backoffice");
   const db = getDb();
   const companyId = session!.companyId!;
   const periode = currentSettlementPeriod();

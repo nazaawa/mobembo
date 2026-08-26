@@ -1,4 +1,5 @@
 import { currentSession } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { companyPolicy, getCompany } from "@/lib/domain/repo";
 import { LIABILITY_GRID } from "@/lib/domain/cancellation";
@@ -16,6 +17,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function Parametres() {
   const session = await currentSession();
+  if (!session || !["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session.activeRole)) redirect("/backoffice");
   const company = await getCompany(session!.companyId!);
   const politique = companyPolicy(company);
 

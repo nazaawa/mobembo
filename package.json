@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "seed": "tsx scripts/seed.ts",
+    "seed": "tsx --env-file=.env --env-file-if-exists=.env.local scripts/seed.ts",
     "test": "MOBEMBO_DATABASE_URL=\"mysql://app:dev@127.0.0.1:3306/mobembo_test\" tsx --test --test-concurrency=1 tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "schema:export": "tsx scripts/export-schema.ts"

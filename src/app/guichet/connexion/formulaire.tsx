@@ -16,7 +16,7 @@ interface AffectationRole {
 }
 
 const DESTINATIONS: Record<Role, string> = {
-  SUPER_ADMIN: "/backoffice",
+  SUPER_ADMIN: "/administration",
   ADMIN_COMPAGNIE: "/backoffice",
   GERANT_AGENCE: "/backoffice",
   GUICHETIER: "/guichet",

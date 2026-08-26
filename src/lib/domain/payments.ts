@@ -356,7 +356,7 @@ export async function resolveIndeterminate(params: {
  * §3.2 : « Réconciliation quotidienne automatique : relevé opérateur contre
  * transactions internes, écarts signalés. »
  */
-export async function reconcileDay(day: string): Promise<{
+export async function reconcileDay(day: string, companyId?: string): Promise<{
   provider: PaymentProviderId;
   internes: number;
   releve: number;
@@ -375,10 +375,13 @@ export async function reconcileDay(day: string): Promise<{
   for (const providerId of ["MPESA", "ORANGE_MONEY", "AIRTEL_MONEY"] as PaymentProviderId[]) {
     const internal = (await db
       .prepare(
-        `SELECT provider_ref, amount, currency, status FROM payments
-          WHERE provider = ? AND created_at BETWEEN ? AND ? AND provider_ref IS NOT NULL`,
+        `SELECT p.provider_ref, p.amount, p.currency, p.status FROM payments p
+          JOIN bookings b ON b.id = p.booking_id
+          JOIN trips t ON t.id = b.trip_id
+          WHERE p.provider = ? AND p.created_at BETWEEN ? AND ? AND p.provider_ref IS NOT NULL
+            AND (? IS NULL OR t.company_id = ?)`,
       )
-      .all(providerId, start, end)) as Array<{
+      .all(providerId, start, end, companyId ?? null, companyId ?? null)) as Array<{
       provider_ref: string;
       amount: number;
       currency: string;
@@ -386,7 +389,11 @@ export async function reconcileDay(day: string): Promise<{
     }>;
 
     const statement = await getProvider(providerId).statement(day);
-    const byRef = new Map(statement.map((line) => [line.providerRef, line]));
+    const internalRefs = new Set(internal.map((row) => row.provider_ref));
+    const scopedStatement = companyId
+      ? statement.filter((line) => internalRefs.has(line.providerRef))
+      : statement;
+    const byRef = new Map(scopedStatement.map((line) => [line.providerRef, line]));
     const ecarts: Array<{ providerRef: string; probleme: string }> = [];
 
     for (const row of internal) {
@@ -417,7 +424,7 @@ export async function reconcileDay(day: string): Promise<{
         db,
       );
     }
-    report.push({ provider: providerId, internes: internal.length, releve: statement.length, ecarts });
+    report.push({ provider: providerId, internes: internal.length, releve: scopedStatement.length, ecarts });
   }
   return report;
 }

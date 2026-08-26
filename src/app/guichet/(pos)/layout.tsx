@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function GuichetLayout({ children }: LayoutProps<"/guichet">) {
   const session = await currentSession();
-  const connecte = session && ["GUICHETIER", "GERANT_AGENCE"].includes(session.activeRole);
+  const connecte = session?.activeRole === "GUICHETIER";
 
   return (
     <div className="flex min-h-full flex-col">

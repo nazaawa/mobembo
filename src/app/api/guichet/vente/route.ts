@@ -13,7 +13,7 @@ import type { Currency } from "@/lib/core/money";
  * rejouée par la file de synchronisation ne produit pas un second billet.
  */
 export const POST = authed(
-  ["GUICHETIER", "GERANT_AGENCE"],
+  ["GUICHETIER"],
   async ({ request, session, ip, device }) => {
     if (!session.agencyId || !session.companyId) {
       throw errors.forbidden("Aucune agence rattachée à ce rôle.");

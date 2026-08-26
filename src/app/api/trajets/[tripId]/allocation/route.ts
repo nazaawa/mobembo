@@ -1,6 +1,6 @@
 import { authedWith, body } from "@/lib/api/handler";
 import { rebalanceChannel, seatAvailability } from "@/lib/domain/seats";
-import { assertCompanyScope } from "@/lib/auth/session";
+import { assertAgencyScope, assertCompanyScope } from "@/lib/auth/session";
 import { getTrip } from "@/lib/domain/repo";
 import type { Channel } from "@/lib/domain/types";
 
@@ -14,6 +14,7 @@ export const POST = authedWith<{ tripId: string }>(
     const { from, to, count } = await body<{ from: Channel; to: Channel; count: number }>(request);
     const trip = await getTrip(params.tripId);
     assertCompanyScope(session, trip.company_id);
+    if (trip.origin_agency_id) assertAgencyScope(session, trip.origin_agency_id);
 
     const result = await rebalanceChannel({
       tripId: params.tripId,

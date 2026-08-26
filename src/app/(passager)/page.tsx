@@ -113,8 +113,8 @@ export default async function AccueilPassager() {
                 Dès qu&apos;une compagnie ajoute ses destinations et ouvre un départ à la vente, son axe apparaît automatiquement ici.
               </p>
             </div>
-            <Link href="/guichet/connexion" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-[10px] border border-bordure px-4 text-sm font-bold text-navy transition hover:border-accent hover:text-accent">
-              Espace professionnel <span aria-hidden>→</span>
+            <Link href="/partenaires/inscription" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-[10px] border border-bordure px-4 text-sm font-bold text-navy transition hover:border-accent hover:text-accent">
+              Devenir partenaire <span aria-hidden>→</span>
             </Link>
           </div>
         )}
@@ -130,8 +130,8 @@ export default async function AccueilPassager() {
             <p className="mt-5 max-w-2xl text-base leading-7 text-texte-doux">
               Mobembo accueille plusieurs compagnies. Chacune pilote ses agences, ajoute ses destinations, planifie ses départs et suit ses ventes depuis un espace sécurisé.
             </p>
-            <Link href="/guichet/connexion" className="mt-8 inline-flex min-h-12 items-center gap-2 rounded-[10px] bg-navy px-5 text-sm font-bold text-white transition duration-300 ease-depart hover:-translate-y-0.5 hover:bg-navy-profond">
-              Accéder à l&apos;espace professionnel <span aria-hidden>→</span>
+            <Link href="/partenaires/inscription" className="mt-8 inline-flex min-h-12 items-center gap-2 rounded-[10px] bg-navy px-5 text-sm font-bold text-white transition duration-300 ease-depart hover:-translate-y-0.5 hover:bg-navy-profond">
+              Inscrire votre compagnie <span aria-hidden>→</span>
             </Link>
           </div>
           <ol className="divide-y divide-bordure border-y border-bordure">

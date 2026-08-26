@@ -1,4 +1,5 @@
 import { currentSession } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/core/time";
 import { Card, Badge, Empty, Table, Why } from "@/components/ui";
@@ -37,6 +38,7 @@ const ACTIONS_SENSIBLES = new Set([
 export default async function JournalAudit(props: PageProps<"/backoffice/audit">) {
   const params = await props.searchParams;
   const session = await currentSession();
+  if (!session || !["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session.activeRole)) redirect("/backoffice");
   const filtreAction = typeof params.action === "string" ? params.action : "";
 
   const db = getDb();

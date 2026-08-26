@@ -25,7 +25,7 @@ interface OfflineSale {
  * pouvoir vider sa file même si une vente est litigieuse.
  */
 export const POST = authed(
-  ["GUICHETIER", "GERANT_AGENCE"],
+  ["GUICHETIER"],
   async ({ request, session, ip, device }) => {
     if (!session.agencyId || !session.companyId) {
       throw errors.forbidden("Aucune agence rattachée à ce rôle.");

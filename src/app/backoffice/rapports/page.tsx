@@ -1,4 +1,5 @@
 import { currentSession } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { revenueReport } from "@/lib/domain/settlements";
 import { formatDateTime } from "@/lib/core/time";
@@ -26,6 +27,7 @@ async function fenetre(jours: number): Promise<{ from: string; to: string; ilYA4
 export default async function Rapports(props: PageProps<"/backoffice/rapports">) {
   const params = await props.searchParams;
   const session = await currentSession();
+  if (!session || !["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session.activeRole)) redirect("/backoffice");
   const companyId = session!.companyId!;
   const db = getDb();
 

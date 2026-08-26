@@ -18,6 +18,10 @@ export default async function TableauDeBord() {
   const session = await currentSession();
   const db = getDb();
   const companyId = session!.companyId;
+  const agencyId = session!.activeRole === "GERANT_AGENCE" ? session!.agencyId : null;
+  if (session!.activeRole === "GERANT_AGENCE" && !agencyId) {
+    return <Empty>Aucune agence n&apos;est rattachée à ce rôle. Contactez la direction.</Empty>;
+  }
 
   const jour = new Date();
   jour.setUTCHours(0, 0, 0, 0);
@@ -30,11 +34,11 @@ export default async function TableauDeBord() {
               SUM(CASE WHEN b.channel = 'GUICHET' THEN t.price_amount ELSE 0 END) AS guichet,
               SUM(CASE WHEN b.channel = 'EN_LIGNE' THEN t.price_amount ELSE 0 END) AS enLigne
          FROM tickets t JOIN bookings b ON b.id = t.booking_id
-        WHERE t.trip_id IN (SELECT id FROM trips WHERE company_id = ?)
+        WHERE t.trip_id IN (SELECT id FROM trips WHERE company_id = ? AND (? IS NULL OR origin_agency_id = ?))
           AND b.status = 'CONFIRME' AND t.created_at >= ?
         GROUP BY t.price_currency`,
     )
-    .all(companyId, debutJour)) as Array<{
+    .all(companyId, agencyId, agencyId, debutJour)) as Array<{
     devise: string;
     billets: number;
     montant: number;
@@ -49,10 +53,10 @@ export default async function TableauDeBord() {
          FROM cash_sessions cs
          JOIN users u ON u.id = cs.user_id
          JOIN agencies a ON a.id = cs.agency_id
-        WHERE a.company_id = ? AND cs.opened_at >= ?
+        WHERE a.company_id = ? AND (? IS NULL OR a.id = ?) AND cs.opened_at >= ?
         ORDER BY cs.opened_at DESC`,
     )
-    .all(companyId, debutJour)) as Array<{
+    .all(companyId, agencyId, agencyId, debutJour)) as Array<{
     id: string;
     agent: string;
     agence: string;
@@ -66,9 +70,10 @@ export default async function TableauDeBord() {
   const alertes = (await db
     .prepare(
       `SELECT * FROM alerts WHERE (company_id = ? OR company_id IS NULL)
+        AND (? IS NULL OR agency_id IS NULL OR agency_id = ?)
         AND acknowledged_at IS NULL ORDER BY created_at DESC LIMIT 10`,
     )
-    .all(companyId)) as Array<{
+    .all(companyId, agencyId, agencyId)) as Array<{
     id: string;
     kind: string;
     severity: string;
@@ -86,11 +91,12 @@ export default async function TableauDeBord() {
               (SELECT COUNT(*) FROM trip_seats s WHERE s.trip_id = t.id
                 AND s.status IN ('VENDU','EMBARQUE')) AS vendus
          FROM trips t JOIN routes r ON r.id = t.route_id JOIN buses b ON b.id = t.bus_id
-        WHERE t.company_id = ? AND t.status IN ('PLANIFIE','EN_VENTE')
+        WHERE t.company_id = ? AND (? IS NULL OR t.origin_agency_id = ?)
+          AND t.status IN ('PLANIFIE','EN_VENTE')
           AND t.departure_datetime >= ?
         ORDER BY t.departure_datetime LIMIT 8`,
     )
-    .all(companyId, maintenant)) as Array<{
+    .all(companyId, agencyId, agencyId, maintenant)) as Array<{
     id: string;
     departure_datetime: string;
     origin_city: string;

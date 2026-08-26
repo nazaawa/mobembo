@@ -14,10 +14,11 @@ export default async function Referentiel() {
   const db = getDb();
   const companyId = session!.companyId!;
   const gestionnaire = ["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session!.activeRole);
+  const agencyId = session!.activeRole === "GERANT_AGENCE" ? session!.agencyId : null;
 
   const agences = (await db
-    .prepare(`SELECT * FROM agencies WHERE company_id = ? ORDER BY name`)
-    .all(companyId)) as Array<{
+    .prepare(`SELECT * FROM agencies WHERE company_id = ? AND (? IS NULL OR id = ?) ORDER BY name`)
+    .all(companyId, agencyId, agencyId)) as Array<{
     id: string;
     name: string;
     city: string;

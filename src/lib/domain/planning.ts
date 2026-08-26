@@ -130,7 +130,10 @@ export async function createBus(params: {
   actor?: { userId: string; role: string };
 }): Promise<{ id: string }> {
   return tx(async (db) => {
-    await getSeatMap(params.seatMapId, db);
+    const seatMap = await getSeatMap(params.seatMapId, db);
+    if (seatMap.company_id !== null && seatMap.company_id !== params.companyId) {
+      throw errors.forbidden("Ce plan de sièges appartient à une autre compagnie.");
+    }
     const id = newId("bus");
     await db
       .prepare(
@@ -206,6 +209,20 @@ export async function createTrip(input: CreateTripInput): Promise<TripRow> {
     const bus = await getBus(input.busId, db);
     if (bus.company_id !== input.companyId) {
       throw errors.forbidden("Ce bus appartient à une autre compagnie.");
+    }
+    const route = await db.prepare<{ company_id: string }>(`SELECT company_id FROM routes WHERE id = ?`).get(input.routeId);
+    if (!route) throw errors.notFound("Ligne");
+    if (route.company_id !== input.companyId) {
+      throw errors.forbidden("Cette ligne appartient à une autre compagnie.");
+    }
+    if (input.originAgencyId) {
+      const agency = await db
+        .prepare<{ company_id: string }>(`SELECT company_id FROM agencies WHERE id = ?`)
+        .get(input.originAgencyId);
+      if (!agency) throw errors.notFound("Agence");
+      if (agency.company_id !== input.companyId) {
+        throw errors.forbidden("Cette agence appartient à une autre compagnie.");
+      }
     }
     if (new Date(input.departureDatetime).getTime() < Date.now() - 3_600_000) {
       throw errors.invalid("La date de départ est dans le passé.");

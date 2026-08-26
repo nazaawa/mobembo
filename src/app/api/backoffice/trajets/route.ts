@@ -3,12 +3,15 @@ import { getDb } from "@/lib/db";
 import { createTrip, cancelTrip } from "@/lib/domain/planning";
 import { errors } from "@/lib/core/errors";
 import type { BusCategory, Channel, DepartureMode } from "@/lib/domain/types";
+import { assertCompanyScope } from "@/lib/auth/session";
+import { getTrip } from "@/lib/domain/repo";
 
 /** GET — trajets planifiés de la compagnie, avec leur remplissage par canal. */
 export const GET = authed(
   ["ADMIN_COMPAGNIE", "GERANT_AGENCE", "SUPER_ADMIN"],
   async ({ request, session }) => {
     const limit = Math.min(Number(request.nextUrl.searchParams.get("limite") ?? 60), 200);
+    const agencyId = session.activeRole === "GERANT_AGENCE" ? session.agencyId : null;
     return {
       trajets: await getDb()
         .prepare(
@@ -22,10 +25,10 @@ export const GET = authed(
              JOIN routes r ON r.id = t.route_id
              JOIN buses b ON b.id = t.bus_id
              LEFT JOIN agencies a ON a.id = t.origin_agency_id
-            WHERE t.company_id = ?
+            WHERE t.company_id = ? AND (? IS NULL OR t.origin_agency_id = ?)
             ORDER BY t.departure_datetime DESC LIMIT ?`,
         )
-        .all(session.companyId, limit),
+        .all(session.companyId, agencyId, agencyId, limit),
     };
   },
 );
@@ -65,6 +68,8 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
 /** DELETE — annulation d'un trajet, motif obligatoire et journalisé. */
 export const DELETE = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request, session }) => {
   const { trajetId, motif } = await body<{ trajetId: string; motif: string }>(request);
+  const trip = await getTrip(trajetId);
+  assertCompanyScope(session, trip.company_id);
   return await cancelTrip({
     tripId: trajetId,
     reason: motif,

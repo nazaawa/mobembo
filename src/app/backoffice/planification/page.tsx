@@ -13,6 +13,7 @@ export default async function Planification() {
   const db = getDb();
   const companyId = session!.companyId!;
   const gestionnaire = ["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session!.activeRole);
+  const agencyId = session!.activeRole === "GERANT_AGENCE" ? session!.agencyId : null;
 
   const trajets = (await db
     .prepare(
@@ -26,10 +27,10 @@ export default async function Planification() {
          JOIN routes r ON r.id = t.route_id
          JOIN buses b ON b.id = t.bus_id
          LEFT JOIN agencies a ON a.id = t.origin_agency_id
-        WHERE t.company_id = ?
+        WHERE t.company_id = ? AND (? IS NULL OR t.origin_agency_id = ?)
         ORDER BY t.departure_datetime DESC LIMIT 80`,
     )
-    .all(companyId)) as Array<{
+    .all(companyId, agencyId, agencyId)) as Array<{
     id: string;
     departure_datetime: string;
     departure_mode: string;

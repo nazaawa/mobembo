@@ -71,6 +71,17 @@ body {
   outline-offset: 3px;
 }
 
+/* `inputClass` (src/components/ui.tsx) dessine déjà son propre focus visible
+   (bordure + ring). Sans cette règle, le contour générique ci-dessus
+   s'ajoute par-dessus et un champ focus affiche trois liserés empilés :
+   bordure, ring, puis contour. Les cases à cocher et boutons radio n'ont pas
+   de focus custom : ils gardent le contour générique comme seul indicateur. */
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
 /* Le conteneur porte le focus visible des champs du hero. Le contrôle natif
    reste actif au clavier, mais ne dessine pas un second rectangle intérieur. */
 .hero-search-field :is(input, select):focus,
@@ -103,6 +114,58 @@ body {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* Case à cocher et bouton radio dessinés en CSS plutôt que confiés au rendu
+   natif du navigateur : `accent-color` seul rend le témoin coché invisible
+   ou à peine visible selon l'OS et le thème (notamment Linux/GTK). */
+.champ-coche {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-content: center;
+  width: 1rem;
+  height: 1rem;
+  border: 1.5px solid var(--bordure);
+  background: var(--surface);
+  transition: border-color 150ms, background-color 150ms;
+}
+
+.champ-coche[type="radio"] {
+  border-radius: 999px;
+}
+
+.champ-coche[type="checkbox"] {
+  border-radius: 4px;
+}
+
+.champ-coche::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  background: var(--accent-texte);
+  transform: scale(0);
+  transition: transform 120ms var(--ease-depart);
+}
+
+.champ-coche[type="radio"]::before {
+  border-radius: 999px;
+}
+
+.champ-coche[type="checkbox"]::before {
+  width: 0.65rem;
+  height: 0.65rem;
+  clip-path: polygon(14% 44%, 0 65%, 45% 100%, 100% 16%, 82% 0%, 43% 62%);
+}
+
+.champ-coche:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.champ-coche:checked::before {
+  transform: scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {

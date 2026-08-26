@@ -19,14 +19,17 @@ export const GET = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ session }
     )
     .all(session.companyId, session.companyId);
 
-  const taux = (await db
-    .prepare(
-      `SELECT
+    const taux = (await db
+      .prepare(
+        `SELECT
          COUNT(*) AS initiations,
-         SUM(CASE WHEN status = 'INDETERMINE' THEN 1 ELSE 0 END) AS indetermines
-       FROM payments WHERE provider <> 'ESPECES'`,
-    )
-    .get()) as { initiations: number; indetermines: number };
+         SUM(CASE WHEN p.status = 'INDETERMINE' THEN 1 ELSE 0 END) AS indetermines
+       FROM payments p
+       JOIN bookings b ON b.id = p.booking_id
+       JOIN trips t ON t.id = b.trip_id
+       WHERE p.provider <> 'ESPECES' AND (? IS NULL OR t.company_id = ?)`,
+      )
+      .get(session.companyId, session.companyId)) as { initiations: number; indetermines: number };
 
   return {
     paiements,

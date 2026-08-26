@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db";
-import { getTicket, tripDetail } from "@/lib/domain/repo";
+import { getBooking, getTicket, tripDetail } from "@/lib/domain/repo";
+import { currentSession } from "@/lib/auth/session";
 import { renunciationGrid } from "@/lib/domain/cancellation";
 import { checkResaleEligibility } from "@/lib/domain/resale";
 import { formatDateTime } from "@/lib/core/time";
@@ -9,12 +10,17 @@ import { TICKET_STATUS_LABELS } from "@/lib/domain/types";
 import { Card, Badge, Money, Why, Table } from "@/components/ui";
 import { QrCode } from "@/components/qr";
 import { ActionsBillet } from "./actions";
+import { ConnexionPassager } from "../../mes-billets/connexion";
 
 export const dynamic = "force-dynamic";
 
 /** §2.5.6 Délivrance — billet QR à l'écran. */
 export default async function PageBillet(props: PageProps<"/billet/[ticketId]">) {
   const { ticketId } = await props.params;
+  const session = await currentSession();
+  if (!session || session.activeRole !== "PASSAGER") {
+    return <Card title="Accéder à ce billet" subtitle="Vérifiez d'abord votre numéro de téléphone."><ConnexionPassager /></Card>;
+  }
 
   let ticket;
   try {
@@ -24,6 +30,8 @@ export default async function PageBillet(props: PageProps<"/billet/[ticketId]">)
   }
 
   const db = getDb();
+  const booking = await getBooking(ticket.booking_id, db);
+  if (ticket.passenger_phone !== session.phone && booking.buyer_phone !== session.phone) notFound();
   const trip = await tripDetail(ticket.trip_id, db);
   const seat = (await db
     .prepare<{ seat_number: string }>(`SELECT seat_number FROM trip_seats WHERE id = ?`)

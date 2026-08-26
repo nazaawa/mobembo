@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AccueilGuichet() {
   const session = await currentSession();
-  if (!session || !["GUICHETIER", "GERANT_AGENCE"].includes(session.activeRole)) {
+  if (!session || session.activeRole !== "GUICHETIER") {
     redirect("/guichet/connexion");
   }
   if (!session.agencyId) {

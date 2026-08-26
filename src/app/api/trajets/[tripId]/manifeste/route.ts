@@ -1,6 +1,6 @@
 import { authedWith } from "@/lib/api/handler";
 import { buildManifest } from "@/lib/domain/boarding";
-import { assertCompanyScope } from "@/lib/auth/session";
+import { assertAgencyScope, assertCompanyScope } from "@/lib/auth/session";
 import { getTrip } from "@/lib/domain/repo";
 
 /**
@@ -11,10 +11,11 @@ import { getTrip } from "@/lib/domain/repo";
  * vérification des QR possible hors-ligne, sans le moindre appel réseau.
  */
 export const GET = authedWith<{ tripId: string }>(
-  ["CONTROLEUR", "GERANT_AGENCE", "ADMIN_COMPAGNIE", "SUPER_ADMIN"],
+  ["CONTROLEUR"],
   async ({ params, session }) => {
     const trip = await getTrip(params.tripId);
     assertCompanyScope(session, trip.company_id);
+    if (trip.origin_agency_id) assertAgencyScope(session, trip.origin_agency_id);
     return { manifeste: await buildManifest(params.tripId) };
   },
 );

@@ -23,6 +23,7 @@ export default async function FicheTrajet(props: PageProps<"/backoffice/trajet/[
     notFound();
   }
   if (session!.activeRole !== "SUPER_ADMIN" && trip.company_id !== session!.companyId) notFound();
+  if (session!.activeRole === "GERANT_AGENCE" && trip.origin_agency_id !== session!.agencyId) notFound();
 
   const db = getDb();
   const seatMap = await getSeatMap(trip.bus.seat_map_id, db);

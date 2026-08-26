@@ -6,7 +6,7 @@ import { closeCashSession } from "@/lib/domain/cash";
  * système calcule l'écart. » Une session ne se ferme pas deux fois.
  */
 export const POST = authedWith<{ sessionId: string }>(
-  ["GUICHETIER", "GERANT_AGENCE"],
+  ["GUICHETIER"],
   async ({ request, params, session, ip, device }) => {
     const { montantCompte } = await body<{ montantCompte: number }>(request);
     const result = await closeCashSession({

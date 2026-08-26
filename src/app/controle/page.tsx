@@ -33,9 +33,10 @@ interface LigneTrajet {
 
 export default async function AccueilControle() {
   const session = await currentSession();
-  if (!session || !["CONTROLEUR", "GERANT_AGENCE", "ADMIN_COMPAGNIE"].includes(session.activeRole)) {
+  if (!session || session.activeRole !== "CONTROLEUR") {
     redirect("/guichet/connexion");
   }
+  if (!session.agencyId) return <Empty>Aucune agence n&apos;est rattachée à ce rôle.</Empty>;
 
   // Les horodatages sont des chaînes ISO 8601 : la fenêtre "-12h / +24h" est
   // calculée côté JS et liée en paramètre plutôt qu'avec datetime('now', …),
@@ -51,12 +52,12 @@ export default async function AccueilControle() {
          FROM trips t
          JOIN routes r ON r.id = t.route_id
          JOIN buses b ON b.id = t.bus_id
-        WHERE t.company_id = ?
+        WHERE t.company_id = ? AND t.origin_agency_id = ?
           AND t.status IN ('PLANIFIE','EN_VENTE','PARTI')
           AND t.departure_datetime BETWEEN ? AND ?
         ORDER BY t.departure_datetime`,
     )
-    .all(session.companyId, fenetreDebut, fenetreFin);
+    .all(session.companyId, session.agencyId, fenetreDebut, fenetreFin);
 
   return (
     <div className="space-y-5">

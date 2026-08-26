@@ -1,4 +1,5 @@
 import { currentSession } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/core/time";
 import { Card, Badge, Empty, Table, Why } from "@/components/ui";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 /** §1.5 Acteurs et rôles — §3.3 séparation stricte des rôles. */
 export default async function Utilisateurs() {
   const session = await currentSession();
+  if (!session || !["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session.activeRole)) redirect("/backoffice");
   const db = getDb();
   const companyId = session!.companyId!;
   const gestionnaire = ["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session!.activeRole);

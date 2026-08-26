@@ -199,22 +199,19 @@ export async function createStaffUser(params: {
   const phone = normalisePhone(params.phone);
   return tx(async (db) => {
     const existing = await db.prepare<UserRow>(`SELECT * FROM users WHERE phone = ?`).get(phone);
-    let userId: string;
-
     if (existing) {
-      userId = existing.id;
-      await db
-        .prepare(`UPDATE users SET name = ?, password_hash = ? WHERE id = ?`)
-        .run(params.name, hashPassword(params.password), userId);
-    } else {
-      userId = newId("usr");
-      await db
-        .prepare(
-          `INSERT INTO users (id, phone, name, password_hash, status, locale, created_at)
-         VALUES (?, ?, ?, ?, 'ACTIVE', 'fr', ?)`,
-        )
-        .run(userId, phone, params.name, hashPassword(params.password), nowIso());
+      throw errors.conflict(
+        "UTILISATEUR_EXISTANT",
+        "Un compte utilise déjà ce numéro. Utilisez le parcours de modification sécurisé.",
+      );
     }
+    const userId = newId("usr");
+    await db
+      .prepare(
+        `INSERT INTO users (id, phone, name, password_hash, status, locale, created_at)
+         VALUES (?, ?, ?, ?, 'ACTIVE', 'fr', ?)`,
+      )
+      .run(userId, phone, params.name, hashPassword(params.password), nowIso());
 
     const insertRole = db.prepare(
       `INSERT IGNORE INTO user_roles (id, user_id, role, company_id, agency_id, created_at)
@@ -236,7 +233,7 @@ export async function createStaffUser(params: {
         userId: params.actor.userId,
         role: params.actor.role,
         companyId: params.actor.companyId,
-        action: existing ? "MODIFICATION_UTILISATEUR" : "CREATION_UTILISATEUR",
+        action: "CREATION_UTILISATEUR",
         entity: "user",
         entityId: userId,
         after: { phone, name: params.name, roles: params.roles },

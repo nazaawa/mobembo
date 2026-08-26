@@ -489,6 +489,26 @@ CREATE TABLE IF NOT EXISTS support_tickets (
   closed_at  VARCHAR(32)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Onboarding des compagnies partenaires ------------------------------------
+CREATE TABLE IF NOT EXISTS partner_applications (
+  id              VARCHAR(32) PRIMARY KEY,
+  company_name    TEXT NOT NULL,
+  contact_name    TEXT NOT NULL,
+  phone           VARCHAR(20) NOT NULL,
+  email           VARCHAR(160),
+  city            VARCHAR(80) NOT NULL,
+  agency_name     TEXT NOT NULL,
+  destinations    TEXT,
+  fleet_size      INT,
+  status          VARCHAR(30) NOT NULL DEFAULT 'EN_ATTENTE', -- EN_ATTENTE|APPROUVEE|REFUSEE
+  company_id      VARCHAR(32),
+  reviewed_by     VARCHAR(32),
+  reviewed_at     VARCHAR(32),
+  created_at      VARCHAR(32) NOT NULL,
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE SET NULL,
+  FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- §2.11 Alertes automatiques
 CREATE TABLE IF NOT EXISTS alerts (
   id            VARCHAR(32) PRIMARY KEY,
@@ -522,6 +542,7 @@ CREATE INDEX idx_trip_seats_locked_until ON trip_seats(locked_until);
 CREATE INDEX idx_tickets_trip ON tickets(trip_id, status);
 CREATE INDEX idx_tickets_phone ON tickets(passenger_phone);
 CREATE INDEX idx_bookings_trip ON bookings(trip_id);
+CREATE INDEX idx_partner_applications_status ON partner_applications(status, created_at);
 CREATE INDEX idx_trips_departure ON trips(departure_datetime, status);
 CREATE INDEX idx_audit_created ON audit_log(created_at);
 CREATE INDEX idx_resale_trip_status ON resale_listings(trip_id, status);

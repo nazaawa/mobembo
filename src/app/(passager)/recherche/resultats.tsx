@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { SearchResult } from "@/lib/domain/planning";
+import { formatTime, hourInKinshasa } from "@/lib/core/time";
 import { Badge, Money } from "@/components/ui";
 
 type Periode = "TOUS" | "MATIN" | "APRES_MIDI" | "SOIR";
@@ -17,7 +18,7 @@ export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
 
   const affiches = useMemo(() => {
     const filtres = resultats.filter((trajet) => {
-      const heure = new Date(trajet.depart).getHours();
+      const heure = hourInKinshasa(trajet.depart);
       const places = trajet.placesEnLigne + trajet.placesRemisesEnVente;
       const bonnePeriode =
         periode === "TOUS" ||
@@ -40,7 +41,11 @@ export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
     });
   }, [disponiblesSeulement, periode, resultats, selectionCategories, tri]);
 
-  const filtres = (
+  // Rendu deux fois (panneau desktop + <details> mobile) : le `name` du radio
+  // doit varier entre les deux copies, sinon le navigateur les traite comme
+  // un seul groupe natif et décoche silencieusement l'une des deux quand
+  // React coche l'autre.
+  const filtres = (idSuffix: string) => (
     <div className="space-y-6">
       <FilterSection title="Catégorie">
         {categories.map((categorie) => (
@@ -69,11 +74,11 @@ export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
           <label key={value} className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
             <input
               type="radio"
-              name="periode"
+              name={`periode-${idSuffix}`}
               value={value}
               checked={periode === value}
               onChange={() => setPeriode(value)}
-              className="h-4 w-4 accent-accent"
+              className="champ-coche"
             />
             {label}
           </label>
@@ -106,13 +111,13 @@ export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
     <div className="grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start">
       <aside className="hidden rounded-[14px] border border-bordure bg-surface p-5 lg:block lg:sticky lg:top-24">
         <h2 className="font-heading text-lg font-bold text-navy">Filtrer les départs</h2>
-        <div className="mt-5">{filtres}</div>
+        <div className="mt-5">{filtres("desktop")}</div>
       </aside>
 
       <section aria-label="Liste des départs" className="min-w-0 space-y-4">
         <details className="rounded-[14px] border border-bordure bg-surface p-4 lg:hidden">
           <summary className="cursor-pointer font-semibold text-navy">Filtres</summary>
-          <div className="mt-4 border-t border-bordure pt-4">{filtres}</div>
+          <div className="mt-4 border-t border-bordure pt-4">{filtres("mobile")}</div>
         </details>
 
         <div className="flex flex-col gap-3 rounded-[14px] border border-bordure bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -151,9 +156,8 @@ export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
 function Resultat({ trajet }: { trajet: SearchResult }) {
   const places = trajet.placesEnLigne + trajet.placesRemisesEnVente;
   const arrivee = trajet.dureeEstimeeMin
-    ? new Date(new Date(trajet.depart).getTime() + trajet.dureeEstimeeMin * 60_000)
+    ? new Date(new Date(trajet.depart).getTime() + trajet.dureeEstimeeMin * 60_000).toISOString()
     : null;
-  const heure = new Intl.DateTimeFormat("fr-CD", { hour: "2-digit", minute: "2-digit" });
 
   return (
     <li className="rounded-[14px] border border-bordure bg-surface p-4 shadow-[0_4px_16px_rgba(8,22,45,0.04)] transition hover:border-accent/45 hover:shadow-[0_12px_30px_rgba(8,22,45,0.08)] sm:p-5">
@@ -169,7 +173,7 @@ function Resultat({ trajet }: { trajet: SearchResult }) {
 
           <div className="mt-4 grid grid-cols-[auto_minmax(4rem,1fr)_auto] items-center gap-3">
             <div>
-              <p className="text-2xl font-bold tabular-nums text-navy">{heure.format(new Date(trajet.depart))}</p>
+              <p className="text-2xl font-bold tabular-nums text-navy">{formatTime(trajet.depart)}</p>
               <p className="text-xs text-texte-doux">{trajet.origine}</p>
             </div>
             <div className="text-center">
@@ -186,7 +190,7 @@ function Resultat({ trajet }: { trajet: SearchResult }) {
               <p className="text-[11px] text-texte-doux">Direct</p>
             </div>
             <div className="text-right">
-              <p className="text-2xl font-bold tabular-nums text-navy">{arrivee ? heure.format(arrivee) : "—"}</p>
+              <p className="text-2xl font-bold tabular-nums text-navy">{arrivee ? formatTime(arrivee) : "—"}</p>
               <p className="text-xs text-texte-doux">{trajet.destination}</p>
             </div>
           </div>
@@ -223,7 +227,7 @@ function FilterSection({ title, children }: { title: string; children: React.Rea
 function CheckFilter({ checked, label, onChange }: { checked: boolean; label: string; onChange: () => void }) {
   return (
     <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
-      <input type="checkbox" checked={checked} onChange={onChange} className="h-4 w-4 rounded accent-accent" />
+      <input type="checkbox" checked={checked} onChange={onChange} className="champ-coche" />
       {label}
     </label>
   );

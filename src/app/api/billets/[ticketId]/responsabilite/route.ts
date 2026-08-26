@@ -1,5 +1,7 @@
 import { authedWith, body } from "@/lib/api/handler";
 import { applyLiability, LIABILITY_GRID, type LiabilitySituation } from "@/lib/domain/cancellation";
+import { assertAgencyScope, assertCompanyScope } from "@/lib/auth/session";
+import { getTicket, getTrip } from "@/lib/domain/repo";
 
 /** GET — grille de responsabilité (annexe du contrat partenaire, §2.10). */
 export const GET = authedWith<{ ticketId: string }>(
@@ -17,6 +19,10 @@ export const POST = authedWith<{ ticketId: string }>(
     const { situation, note } = await body<{ situation: LiabilitySituation; note?: string }>(
       request,
     );
+    const ticket = await getTicket(params.ticketId);
+    const trip = await getTrip(ticket.trip_id);
+    assertCompanyScope(session, trip.company_id);
+    if (trip.origin_agency_id) assertAgencyScope(session, trip.origin_agency_id);
     return await applyLiability({
       ticketId: params.ticketId,
       situation,

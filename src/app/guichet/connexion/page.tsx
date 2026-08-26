@@ -5,7 +5,7 @@ import { MobemboLogo } from "@/components/brand";
 
 export default function ConnexionGuichet() {
   return (
-    <section className="-my-5 mx-[calc(50%-50vw)] grid min-h-[calc(100vh-45px)] min-h-[calc(100dvh-45px)] w-screen overflow-hidden bg-white lg:grid-cols-[0.9fr_1.1fr]">
+    <section className="grid min-h-screen min-h-dvh w-full overflow-hidden bg-white lg:grid-cols-[0.9fr_1.1fr]">
       <div className="flex min-w-0 flex-col px-6 py-8 sm:px-10 sm:py-10 lg:px-14 lg:py-12">
         <Link href="/" className="group flex min-h-11 w-fit items-center gap-3 focus-visible:rounded-[10px] motion-reduce:transition-none" aria-label="Mobembo, retour à l'accueil">
           <MobemboLogo alt="" className="h-10 w-auto transition-transform duration-300 group-hover:-translate-y-0.5 motion-reduce:transform-none motion-reduce:transition-none" />

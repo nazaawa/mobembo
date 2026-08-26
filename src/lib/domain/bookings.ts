@@ -1,5 +1,6 @@
 import type { DbHandle } from "@/lib/db";
 import { getDb, tx } from "@/lib/db";
+import { normalisePhone } from "@/lib/auth";
 import { newId } from "@/lib/core/ids";
 import { nowIso, hoursUntil } from "@/lib/core/time";
 import { errors } from "@/lib/core/errors";
@@ -85,6 +86,16 @@ export async function createBooking(params: {
   /** §2.9 : un avoir se consomme sur un nouvel achat. */
   useCreditId?: string | null;
 }): Promise<{ booking: BookingRow; dueAmount: number }> {
+  // Normalisé une seule fois ici : c'est le point d'entrée qui persiste le
+  // téléphone (bookings.buyer_phone, trip_seats.lock_phone, tickets via le
+  // payload passagers). Un format non normalisé à cet endroit désynchronise
+  // silencieusement « mes billets » et le contrôle de propriété d'une
+  // réservation, tous deux comparés à session.phone (normalisé par l'OTP).
+  const buyerPhone = normalisePhone(params.buyerPhone);
+  const passengers = params.passengers.map((p) =>
+    p.phone ? { ...p, phone: normalisePhone(p.phone) } : p,
+  );
+
   return tx(async (db) => {
     await releaseExpiredLocks(db);
     const trip = await getTrip(params.tripId, db);
@@ -107,7 +118,7 @@ export async function createBooking(params: {
       );
     }
     const heldNumbers = new Set(held.map((s) => s.seat_number));
-    for (const passenger of params.passengers) {
+    for (const passenger of passengers) {
       if (!heldNumbers.has(passenger.seatNumber)) {
         throw errors.conflict(
           "SIEGE_NON_MAINTENU",
@@ -123,8 +134,8 @@ export async function createBooking(params: {
         `SELECT COUNT(*) AS n FROM trip_seats
           WHERE lock_phone = ? AND status = 'VERROUILLE' AND lock_session_id <> ?`,
       )
-      .get(params.buyerPhone, params.holdId);
-    if ((others?.n ?? 0) + params.passengers.length > policy.maxLocksPerPhone) {
+      .get(buyerPhone, params.holdId);
+    if ((others?.n ?? 0) + passengers.length > policy.maxLocksPerPhone) {
       throw errors.conflict(
         "TROP_DE_VERROUS",
         `Maximum ${policy.maxLocksPerPhone} sièges en attente de paiement par numéro.`,
@@ -132,10 +143,10 @@ export async function createBooking(params: {
     }
     await db
       .prepare(`UPDATE trip_seats SET lock_phone = ? WHERE trip_id = ? AND lock_session_id = ?`)
-      .run(params.buyerPhone, params.tripId, params.holdId);
+      .run(buyerPhone, params.tripId, params.holdId);
 
     const unitPrice = params.currency === "USD" ? price.price_usd : price.price_cdf;
-    const gross = unitPrice * params.passengers.length;
+    const gross = unitPrice * passengers.length;
 
     let creditApplied = 0;
     if (params.useCreditId) {
@@ -143,7 +154,7 @@ export async function createBooking(params: {
         .prepare<{ id: string; amount: number; currency: Currency; expires_at: string; company_id: string }>(
           `SELECT * FROM credits WHERE id = ? AND passenger_phone = ? AND status = 'ACTIF'`,
         )
-        .get(params.useCreditId, params.buyerPhone);
+        .get(params.useCreditId, buyerPhone);
       if (!credit) throw errors.notFound("Avoir");
       if (new Date(credit.expires_at) <= new Date()) {
         throw errors.conflict("AVOIR_EXPIRE", "Cet avoir a expiré.");
@@ -171,7 +182,7 @@ export async function createBooking(params: {
       .run(
         bookingId,
         params.tripId,
-        params.buyerPhone,
+        buyerPhone,
         params.buyerName,
         gross,
         params.currency,
@@ -189,7 +200,7 @@ export async function createBooking(params: {
       .run(
         newId("syn"),
         `passengers:${bookingId}`,
-        JSON.stringify({ holdId: params.holdId, passengers: params.passengers, useCreditId: params.useCreditId ?? null }),
+        JSON.stringify({ holdId: params.holdId, passengers, useCreditId: params.useCreditId ?? null }),
         nowIso(),
       );
 
@@ -304,6 +315,11 @@ export async function posSell(params: {
   deviceId?: string;
   ip?: string | null;
 }): Promise<{ booking: BookingRow; tickets: TicketRow[] }> {
+  const buyerPhone = normalisePhone(params.buyerPhone);
+  const passengers = params.passengers.map((p) =>
+    p.phone ? { ...p, phone: normalisePhone(p.phone) } : p,
+  );
+
   return tx(async (db) => {
     // Idempotence : une vente hors-ligne rejouée deux fois par la file de
     // synchronisation ne produit qu'un billet (§5.2).
@@ -326,6 +342,9 @@ export async function posSell(params: {
     if (trip.company_id !== params.actor.companyId) {
       throw errors.forbidden("Ce trajet appartient à une autre compagnie.");
     }
+    if (trip.origin_agency_id !== params.actor.agencyId) {
+      throw errors.forbidden("Ce trajet n'est pas vendu par votre agence.");
+    }
     if (["PARTI", "CLOTURE", "ANNULE"].includes(trip.status)) {
       throw errors.conflict("TRAJET_FERME", "La vente est fermée sur ce trajet.");
     }
@@ -343,20 +362,23 @@ export async function posSell(params: {
     if (session.user_id !== params.actor.userId) {
       throw errors.forbidden("Cette session de caisse appartient à un autre agent.");
     }
+    if (session.agency_id !== params.actor.agencyId) {
+      throw errors.forbidden("Cette session de caisse appartient à une autre agence.");
+    }
 
     const bus = await getBus(trip.bus_id, db);
     const price = await tripPrice(params.tripId, bus.category, db);
     // §2.4 : « Le guichetier ne peut pas modifier un tarif. Les prix viennent
     // de la grille tarifaire du trajet. » Aucun montant n'est accepté du client.
     const unitPrice = params.currency === "USD" ? price.price_usd : price.price_cdf;
-    const total = unitPrice * params.passengers.length;
+    const total = unitPrice * passengers.length;
 
     const holdId = newId("pos");
     await lockSeatsInline(db, {
       tripId: params.tripId,
       seatNumbers: params.seatNumbers,
       holdId,
-      phone: params.buyerPhone,
+      phone: buyerPhone,
     });
 
     const bookingId = newId("bkg");
@@ -370,7 +392,7 @@ export async function posSell(params: {
       .run(
         bookingId,
         params.tripId,
-        params.buyerPhone,
+        buyerPhone,
         params.buyerName,
         params.actor.agencyId,
         params.actor.userId,
@@ -389,7 +411,7 @@ export async function posSell(params: {
     const bySeat = new Map(seats.map((s) => [s.seat_number, s]));
 
     const tickets: TicketRow[] = [];
-    for (const passenger of params.passengers) {
+    for (const passenger of passengers) {
       const seat = bySeat.get(passenger.seatNumber);
       if (!seat) throw errors.conflict("SIEGE_INDISPONIBLE", `Siège ${passenger.seatNumber} indisponible.`);
       tickets.push(
@@ -398,7 +420,7 @@ export async function posSell(params: {
           tripId: params.tripId,
           seat,
           passengerName: passenger.name,
-          passengerPhone: passenger.phone || params.buyerPhone,
+          passengerPhone: passenger.phone || buyerPhone,
           priceAmount: unitPrice,
           priceCurrency: params.currency,
           agencyId: params.actor.agencyId,
@@ -436,7 +458,7 @@ export async function posSell(params: {
         newId("pay"),
         bookingId,
         params.clientOpId ?? `pos:${bookingId}`,
-        params.buyerPhone,
+        buyerPhone,
         total,
         params.currency,
         nowIso(),

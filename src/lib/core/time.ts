@@ -34,6 +34,17 @@ export function todayInKinshasa(from: Date = now()): string {
   }).format(from);
 }
 
+/** Heure locale (0-23) à Kinshasa, utilisée pour classer les départs par période. */
+export function hourInKinshasa(isoDate: string): number {
+  return Number(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Africa/Kinshasa",
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(isoDate)),
+  );
+}
+
 export function minutesUntil(isoDate: string, from: Date = now()): number {
   return (new Date(isoDate).getTime() - from.getTime()) / 60_000;
 }

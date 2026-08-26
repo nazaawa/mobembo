@@ -1,7 +1,8 @@
 import { handlerWith, authedWith, body } from "@/lib/api/handler";
 import { listTripSeats, seatAvailability, blockSeat } from "@/lib/domain/seats";
 import { activeListings } from "@/lib/domain/resale";
-import { tripDetail } from "@/lib/domain/repo";
+import { getTrip, tripDetail } from "@/lib/domain/repo";
+import { assertAgencyScope, assertCompanyScope } from "@/lib/auth/session";
 
 /**
  * GET /api/trajets/[tripId]/sieges — plan de sièges avec les états en temps
@@ -45,6 +46,9 @@ export const PATCH = authedWith<{ tripId: string }>(
   ["GERANT_AGENCE", "ADMIN_COMPAGNIE", "SUPER_ADMIN"],
   async ({ request, params, session }) => {
     const { seatNumber, blocked } = await body<{ seatNumber: string; blocked: boolean }>(request);
+    const trip = await getTrip(params.tripId);
+    assertCompanyScope(session, trip.company_id);
+    if (trip.origin_agency_id) assertAgencyScope(session, trip.origin_agency_id);
     await blockSeat({
       tripId: params.tripId,
       seatNumber,

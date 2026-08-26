@@ -1,7 +1,7 @@
 import { authed } from "@/lib/api/handler";
 import { getDb } from "@/lib/db";
 import { revenueReport } from "@/lib/domain/settlements";
-import { errors } from "@/lib/core/errors";
+import { companyScope } from "@/lib/auth/session";
 
 /**
  * GET /api/backoffice/rapports — §2.11 « Rapports et alertes du back-office ».
@@ -9,11 +9,10 @@ import { errors } from "@/lib/core/errors";
  * remplissage, no-show, revente.
  */
 export const GET = authed(
-  ["ADMIN_COMPAGNIE", "GERANT_AGENCE", "SUPER_ADMIN"],
+  ["ADMIN_COMPAGNIE", "SUPER_ADMIN"],
   async ({ request, session }) => {
     const params = request.nextUrl.searchParams;
-    const companyId = params.get("compagnie") ?? session.companyId;
-    if (!companyId) throw errors.invalid("Compagnie non déterminée.");
+    const companyId = companyScope(session, params.get("compagnie"));
 
     const from = params.get("du") ?? new Date(Date.now() - 30 * 86_400_000).toISOString();
     const to = params.get("au") ?? new Date(Date.now() + 86_400_000).toISOString();

@@ -30,13 +30,29 @@ export default async function BackofficeLayout({ children }: LayoutProps<"/backo
   if (!session || !["ADMIN_COMPAGNIE", "GERANT_AGENCE", "SUPER_ADMIN"].includes(session.activeRole)) {
     redirect("/guichet/connexion");
   }
+  if (session.activeRole === "SUPER_ADMIN" && !session.companyId) redirect("/administration");
+
+  const groupes = session.activeRole === "GERANT_AGENCE"
+    ? GROUPES.map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          ["/backoffice", "/backoffice/planification", "/backoffice/referentiel"].includes(item.href),
+        ),
+      })).filter((group) => group.items.length > 0)
+    : GROUPES;
 
   const alertes = (await getDb()
     .prepare(
       `SELECT COUNT(*) AS n FROM alerts
-      WHERE (company_id = ? OR company_id IS NULL) AND acknowledged_at IS NULL`,
+      WHERE (company_id = ? OR company_id IS NULL)
+        AND (? IS NULL OR agency_id IS NULL OR agency_id = ?)
+        AND acknowledged_at IS NULL`,
     )
-    .get(session.companyId)) as { n: number };
+    .get(
+      session.companyId,
+      session.activeRole === "GERANT_AGENCE" ? session.agencyId : null,
+      session.activeRole === "GERANT_AGENCE" ? session.agencyId : null,
+    )) as { n: number };
 
   return (
     <div className="min-h-full bg-fond lg:grid lg:grid-cols-[16.5rem_minmax(0,1fr)]">
@@ -47,11 +63,12 @@ export default async function BackofficeLayout({ children }: LayoutProps<"/backo
         <div className="px-5 pt-5">
           <span className="inline-flex rounded-md bg-white/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/75">Back-office</span>
         </div>
-        <BackofficeNavigation groups={GROUPES} />
+        <BackofficeNavigation groups={groupes} />
         <div className="mt-auto border-t border-white/10 p-5">
           <p className="truncate text-sm font-semibold">{session.name}</p>
           <p className="mt-0.5 text-xs text-white/55">{ROLE_LABELS[session.activeRole]}</p>
           <Link href="/guichet/connexion" className="mt-3 inline-flex min-h-11 items-center text-xs font-semibold text-accent-clair hover:text-white">Changer de rôle</Link>
+          {session.activeRole === "SUPER_ADMIN" && <Link href="/administration" className="block min-h-11 text-xs font-semibold text-white/70 hover:text-white">Changer de compagnie</Link>}
         </div>
       </aside>
 
@@ -79,7 +96,7 @@ export default async function BackofficeLayout({ children }: LayoutProps<"/backo
               </div>
             </div>
           </div>
-          <div className="border-t border-bordure px-4 lg:hidden"><BackofficeNavigation groups={GROUPES} mobile /></div>
+          <div className="border-t border-bordure px-4 lg:hidden"><BackofficeNavigation groups={groupes} mobile /></div>
         </header>
         <main className="mx-auto w-full max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
       </div>

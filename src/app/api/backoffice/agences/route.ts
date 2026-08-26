@@ -10,8 +10,12 @@ export const GET = authed(
   ["ADMIN_COMPAGNIE", "GERANT_AGENCE", "SUPER_ADMIN"],
   async ({ session }) => {
     const agences = (await getDb()
-      .prepare(`SELECT * FROM agencies WHERE company_id = ? ORDER BY name`)
-      .all(session.companyId)) as Array<{ id: string; name: string }>;
+      .prepare(`SELECT * FROM agencies WHERE company_id = ? AND (? IS NULL OR id = ?) ORDER BY name`)
+      .all(
+        session.companyId,
+        session.activeRole === "GERANT_AGENCE" ? session.agencyId : null,
+        session.activeRole === "GERANT_AGENCE" ? session.agencyId : null,
+      )) as Array<{ id: string; name: string }>;
     return {
       agences: await Promise.all(
         agences.map(async (agence) => ({

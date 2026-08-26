@@ -2,14 +2,14 @@ import { authed, body } from "@/lib/api/handler";
 import { getDb } from "@/lib/db";
 import { computeSettlement, currentSettlementPeriod, markSettlementPaid } from "@/lib/domain/settlements";
 import { errors } from "@/lib/core/errors";
+import { companyScope } from "@/lib/auth/session";
 
 /**
  * GET — §2.10 « Le détail ligne à ligne est consultable par la compagnie dans
  * son back-office. La transparence évite les litiges. »
  */
 export const GET = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request, session }) => {
-  const companyId = request.nextUrl.searchParams.get("compagnie") ?? session.companyId;
-  if (!companyId) throw errors.invalid("Compagnie non déterminée.");
+  const companyId = companyScope(session, request.nextUrl.searchParams.get("compagnie"));
   const db = getDb();
 
   const settlements = (await db
@@ -44,6 +44,11 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
 
   if (input.action === "MARQUER_PAYE") {
     if (!input.reversementId) throw errors.invalid("reversementId requis.");
+    const settlement = await getDb()
+      .prepare<{ company_id: string }>(`SELECT company_id FROM settlements WHERE id = ?`)
+      .get(input.reversementId);
+    if (!settlement) throw errors.notFound("Reversement");
+    companyScope(session, settlement.company_id);
     await markSettlementPaid(input.reversementId, {
       userId: session.userId,
       role: session.activeRole,
@@ -51,8 +56,7 @@ export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request,
     return { paye: true };
   }
 
-  const companyId = input.compagnie ?? session.companyId;
-  if (!companyId) throw errors.invalid("Compagnie non déterminée.");
+  const companyId = companyScope(session, input.compagnie);
   const period = currentSettlementPeriod();
 
   return {

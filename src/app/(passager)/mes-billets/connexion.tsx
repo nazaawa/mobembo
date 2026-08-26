@@ -47,10 +47,26 @@ export function ConnexionPassager() {
           className={inputClass}
           inputMode="tel"
           value={telephone}
+          disabled={envoye}
           onChange={(e) => setTelephone(e.target.value)}
           placeholder="081 234 5678"
         />
       </Field>
+
+      {envoye && (
+        <button
+          type="button"
+          className="text-xs font-semibold text-accent hover:underline"
+          onClick={() => {
+            setEnvoye(false);
+            setCode("");
+            setCodeDemo(null);
+            setErreur(null);
+          }}
+        >
+          Ce n&apos;est pas le bon numéro ? Modifier
+        </button>
+      )}
 
       {!envoye ? (
         <button
@@ -100,7 +116,12 @@ export function ConnexionPassager() {
             <button
               type="button"
               className={buttonSecondaryClass}
-              onClick={() => appel("/api/auth/otp/demande", { phone: telephone })}
+              disabled={occupe}
+              onClick={async () => {
+                setCode("");
+                const data = await appel("/api/auth/otp/demande", { phone: telephone });
+                if (data) setCodeDemo(data.codeDeveloppement ?? null);
+              }}
             >
               Renvoyer
             </button>

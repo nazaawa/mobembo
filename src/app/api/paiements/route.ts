@@ -1,6 +1,8 @@
-import { handler, body } from "@/lib/api/handler";
+import { authed, body } from "@/lib/api/handler";
 import { initiatePayment } from "@/lib/domain/payments";
 import type { PaymentProviderId } from "@/lib/domain/types";
+import { getBooking } from "@/lib/domain/repo";
+import { errors } from "@/lib/core/errors";
 
 /**
  * POST /api/paiements — §3.2 « Clé d'idempotence obligatoire sur chaque
@@ -9,13 +11,15 @@ import type { PaymentProviderId } from "@/lib/domain/types";
  * Le PIN Mobile Money n'apparaît nulle part : il est saisi sur le téléphone du
  * passager, dans le canal de l'opérateur (§3.3).
  */
-export const POST = handler(async ({ request }) => {
+export const POST = authed(["PASSAGER"], async ({ request, session }) => {
   const input = await body<{
     reservationId: string;
     operateur: PaymentProviderId;
     telephone: string;
     cleIdempotence: string;
   }>(request);
+  const booking = await getBooking(input.reservationId);
+  if (booking.buyer_phone !== session.phone) throw errors.forbidden("Cette réservation ne vous appartient pas.");
 
   const result = await initiatePayment({
     bookingId: input.reservationId,

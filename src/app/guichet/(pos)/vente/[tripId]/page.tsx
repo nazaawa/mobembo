@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export default async function PageVente(props: PageProps<"/guichet/vente/[tripId]">) {
   const { tripId } = await props.params;
   const session = await currentSession();
-  if (!session || !["GUICHETIER", "GERANT_AGENCE"].includes(session.activeRole)) {
+  if (!session || session.activeRole !== "GUICHETIER") {
     redirect("/guichet/connexion");
   }
   if (!session.agencyId) {
@@ -43,7 +43,7 @@ export default async function PageVente(props: PageProps<"/guichet/vente/[tripId
   } catch {
     notFound();
   }
-  if (trip.company_id !== session.companyId) notFound();
+  if (trip.company_id !== session.companyId || trip.origin_agency_id !== session.agencyId) notFound();
 
   const seatMap = await getSeatMap(trip.bus.seat_map_id);
   const layout = JSON.parse(seatMap.layout_json) as SeatMapLayout;

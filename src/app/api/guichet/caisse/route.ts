@@ -4,7 +4,7 @@ import { errors } from "@/lib/core/errors";
 import type { Currency } from "@/lib/core/money";
 
 /** GET — session de caisse ouverte de l'agent, avec son état courant. */
-export const GET = authed(["GUICHETIER", "GERANT_AGENCE"], async ({ session }) => {
+export const GET = authed(["GUICHETIER"], async ({ session }) => {
   if (!session.agencyId) throw errors.forbidden("Aucune agence rattachée à ce rôle.");
   const open = await openSessionFor(session.userId, session.agencyId);
   return { session: open ? await cashSessionSummary(open.id) : null };
@@ -12,7 +12,7 @@ export const GET = authed(["GUICHETIER", "GERANT_AGENCE"], async ({ session }) =
 
 /** POST — §2.4 ouverture : fond de caisse, horodatage, identification. */
 export const POST = authed(
-  ["GUICHETIER", "GERANT_AGENCE"],
+  ["GUICHETIER"],
   async ({ request, session, device }) => {
     if (!session.agencyId) throw errors.forbidden("Aucune agence rattachée à ce rôle.");
     const { fondInitial, devise } = await body<{ fondInitial: number; devise: Currency }>(request);

@@ -6,7 +6,7 @@ import { getDb } from "@/lib/db";
  * exportable. » Le journal est en écriture seule : cette route ne fait que lire.
  */
 export const GET = authed(
-  ["ADMIN_COMPAGNIE", "GERANT_AGENCE", "SUPER_ADMIN"],
+  ["ADMIN_COMPAGNIE", "SUPER_ADMIN"],
   async ({ request, session }) => {
     const params = request.nextUrl.searchParams;
     const companyId = session.activeRole === "SUPER_ADMIN"

@@ -22,6 +22,17 @@ interface LigneBillet {
   price_currency: string;
 }
 
+interface LigneReservationEnAttente {
+  id: string;
+  total_amount: number;
+  credit_applied: number;
+  currency: string;
+  origin_city: string;
+  destination_city: string;
+  departure_datetime: string;
+  compagnie: string;
+}
+
 export default async function MesBillets() {
   const session = await currentSession();
 
@@ -48,11 +59,63 @@ export default async function MesBillets() {
     )
     .all(session.phone);
 
+  const reservationsEnAttente = await getDb()
+    .prepare<LigneReservationEnAttente>(
+      `SELECT b.id, b.total_amount, b.credit_applied, b.currency,
+              r.origin_city, r.destination_city, tr.departure_datetime, c.name AS compagnie
+         FROM bookings b
+         JOIN trips tr ON tr.id = b.trip_id
+         JOIN routes r ON r.id = tr.route_id
+         JOIN companies c ON c.id = tr.company_id
+        WHERE b.buyer_phone = ? AND b.status = 'EN_ATTENTE'
+        ORDER BY b.created_at DESC`,
+    )
+    .all(session.phone);
+
   const avoirs = await activeCredits(session.phone);
 
   return (
     <div className="space-y-5">
       <h1 className="text-xl font-semibold tracking-tight">Mes billets</h1>
+
+      {reservationsEnAttente.length > 0 && (
+        <Card
+          title="Réservations en attente de paiement"
+          subtitle="Le siège reste maintenu tant que le verrou n'a pas expiré."
+        >
+          <ul className="space-y-2">
+            {reservationsEnAttente.map((reservation) => (
+              <li
+                key={reservation.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-surface-alt px-3 py-2.5"
+              >
+                <div className="text-sm">
+                  <p className="font-medium">
+                    {reservation.origin_city} → {reservation.destination_city}
+                  </p>
+                  <p className="text-xs text-texte-doux">
+                    {reservation.compagnie} · {formatDateTime(reservation.departure_datetime)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold">
+                    <Money
+                      amount={reservation.total_amount - reservation.credit_applied}
+                      currency={reservation.currency}
+                    />
+                  </span>
+                  <Link
+                    href={`/reservation/${reservation.id}`}
+                    className="inline-flex min-h-9 items-center rounded-lg bg-accent px-3 text-sm font-medium text-accent-texte transition hover:brightness-110"
+                  >
+                    Payer
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {avoirs.length > 0 && (
         <Card title="Vos avoirs" subtitle="Utilisables sur votre prochaine réservation.">

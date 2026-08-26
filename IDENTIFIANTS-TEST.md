@@ -37,6 +37,21 @@ Un `GERANT_AGENCE` cumule aussi le rôle `GUICHETIER` sur son agence (§1.5) :
 après connexion, un écran demande de choisir la casquette active pour la
 session.
 
+## Chauffeur indépendant (Fiston Kalala)
+
+Créé via le vrai circuit de candidature partenaire (`type: INDEPENDANT`),
+validé par le `SUPER_ADMIN` — une compagnie d'une seule personne avec ses
+trois casquettes sur sa propre agence.
+
+| Téléphone       | Rôle              | Accès                       | Nom            | Agence         |
+| --------------- | ----------------- | ---------------------------- | -------------- | -------------- |
+| `+243810000010` | `ADMIN_COMPAGNIE` | `/backoffice`                 | Fiston Kalala   | —              |
+| `+243810000010` | `GERANT_AGENCE`   | `/backoffice` + `/guichet`    | Fiston Kalala   | Fiston Kalala  |
+| `+243810000010` | `GUICHETIER`      | `/guichet`                    | Fiston Kalala   | Fiston Kalala  |
+
+Sa voiture express (`LU 6600 VX`, Kolwezi → Lubumbashi, 10h00) apparaît dans
+les résultats de recherche avec le badge « Voiture express ».
+
 ## Passager
 
 Pas de compte ni de mot de passe : connexion par OTP SMS sur

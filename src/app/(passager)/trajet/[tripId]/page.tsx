@@ -99,6 +99,7 @@ export default async function PageTrajet(props: PageProps<"/trajet/[tripId]">) {
           compagnie: trip.company.name,
           depart: trip.departure_datetime,
           categorie: trip.bus.category,
+          vehiculeType: trip.bus.vehicle_type,
           plaque: trip.bus.plate_number,
         }}
       />

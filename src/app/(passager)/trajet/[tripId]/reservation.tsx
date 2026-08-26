@@ -12,9 +12,9 @@ import {
   buttonSecondaryClass,
   Money,
 } from "@/components/ui";
-import { MOBILE_MONEY_PROVIDERS, PROVIDER_LABELS } from "@/lib/domain/types";
+import { MOBILE_MONEY_PROVIDERS, PROVIDER_LABELS, VEHICLE_TYPE_LABELS } from "@/lib/domain/types";
 import type { Currency } from "@/lib/core/money";
-import type { PaymentProviderId } from "@/lib/domain/types";
+import type { PaymentProviderId, VehicleType } from "@/lib/domain/types";
 
 type Etape = "SIEGES" | "IDENTITE" | "PAIEMENT";
 
@@ -54,6 +54,7 @@ export function Reservation({
     compagnie: string;
     depart: string;
     categorie: string;
+    vehiculeType: VehicleType;
     plaque: string;
   };
 }) {
@@ -516,7 +517,10 @@ export function Reservation({
                     minute: "2-digit",
                   }).format(new Date(trajet.depart))}
                 />
-                <SummaryRow label="Bus" value={`${trajet.categorie} · ${trajet.plaque}`} />
+                <SummaryRow
+                  label="Véhicule"
+                  value={`${VEHICLE_TYPE_LABELS[trajet.vehiculeType]} ${trajet.categorie} · ${trajet.plaque}`}
+                />
                 <SummaryRow label="Sièges" value={selection.join(", ") || "À choisir"} />
               </dl>
 

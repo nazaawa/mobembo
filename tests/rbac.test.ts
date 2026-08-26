@@ -87,3 +87,37 @@ test("Onboarding — l'approbation crée une compagnie, une agence et sa directi
   assert.equal(agency?.n, 1);
   assert.equal(direction?.role, "ADMIN_COMPAGNIE");
 });
+
+test("Onboarding — un chauffeur indépendant reçoit direction, gérance et guichet", async () => {
+  const fixture = await seedFixture();
+  const application = await createPartnerApplication({
+    applicationType: "INDEPENDANT",
+    contactName: "Jean Mbala",
+    phone: "+243899222333",
+    city: "Kikwit",
+  });
+  const result = await reviewPartnerApplication({
+    applicationId: application.id,
+    decision: "APPROUVER",
+    initialPassword: "initial-2026",
+    actor: { userId: fixture.gerantId, role: "SUPER_ADMIN" },
+  });
+  assert.ok(result.companyId);
+  const db = getDb();
+  const company = await db
+    .prepare<{ name: string; kind: string }>(`SELECT name, kind FROM companies WHERE id = ?`)
+    .get(result.companyId);
+  const roles = await db
+    .prepare<{ role: string }>(
+      `SELECT ur.role FROM user_roles ur JOIN users u ON u.id = ur.user_id
+        WHERE u.phone = ? AND ur.company_id = ? ORDER BY ur.role`,
+    )
+    .all("+243899222333", result.companyId);
+  // Sans raison sociale ni agence fournies, les deux se déduisent du nom du chauffeur.
+  assert.equal(company?.name, "Jean Mbala");
+  assert.equal(company?.kind, "INDEPENDANT");
+  assert.deepEqual(
+    roles.map((r) => r.role).sort(),
+    ["ADMIN_COMPAGNIE", "GERANT_AGENCE", "GUICHETIER"],
+  );
+});

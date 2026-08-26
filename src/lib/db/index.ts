@@ -71,7 +71,12 @@ function poolConfig(): mysql.PoolOptions {
  * CREATE INDEX n'a pas de variante IF NOT EXISTS en MySQL : au redémarrage,
  * l'index existe déjà et le serveur renvoie ER_DUP_KEYNAME (1061), qu'on
  * ignore volontairement. CREATE TABLE, lui, garde son IF NOT EXISTS natif.
+ * Même principe pour les ALTER TABLE ADD COLUMN additifs en fin de schéma :
+ * sur une base où la colonne existe déjà (table neuve, ou migration déjà
+ * appliquée), MySQL renvoie ER_DUP_FIELDNAME (1060), ignoré de la même façon.
  */
+const IGNORABLE_MIGRATION_CODES = new Set(["ER_DUP_KEYNAME", "ER_DUP_FIELDNAME"]);
+
 async function migrate(target: mysql.Pool): Promise<void> {
   const statements = SCHEMA_SQL.split(";")
     .map((statement) => statement.trim())
@@ -81,7 +86,7 @@ async function migrate(target: mysql.Pool): Promise<void> {
       await target.query(statement);
     } catch (err) {
       const code = (err as { code?: string }).code;
-      if (code === "ER_DUP_KEYNAME") continue;
+      if (code && IGNORABLE_MIGRATION_CODES.has(code)) continue;
       throw err;
     }
   }

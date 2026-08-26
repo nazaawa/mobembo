@@ -71,7 +71,8 @@ export default async function PageVente(props: PageProps<"/guichet/vente/[tripId
             <Badge tone={trip.bus.category === "VIP" ? "accent" : "neutre"}>
               {trip.bus.category}
             </Badge>
-            <span>bus {trip.bus.plate_number}</span>
+            {trip.bus.vehicle_type === "VOITURE" && <Badge tone="attention">Voiture express</Badge>}
+            <span>{trip.bus.vehicle_type === "VOITURE" ? "véhicule" : "bus"} {trip.bus.plate_number}</span>
           </p>
         </div>
       </div>
@@ -107,6 +108,7 @@ export default async function PageVente(props: PageProps<"/guichet/vente/[tripId
           depart: trip.departure_datetime,
           plaque: trip.bus.plate_number,
           categorie: trip.bus.category,
+          vehiculeType: trip.bus.vehicle_type,
         }}
       />
     </div>

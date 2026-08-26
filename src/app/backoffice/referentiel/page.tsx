@@ -2,7 +2,8 @@ import { currentSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { seatGrid, LAYOUT_PRESETS } from "@/lib/domain/seat-map";
 import { detectSequenceGaps } from "@/lib/domain/tickets";
-import type { SeatMapLayout } from "@/lib/domain/types";
+import type { SeatMapLayout, VehicleType } from "@/lib/domain/types";
+import { VEHICLE_TYPE_LABELS } from "@/lib/domain/types";
 import { Card, Badge, Empty, Table, Why } from "@/components/ui";
 import { EditeurPlan, FormulaireBus, FormulaireLigne, FormulaireAgence } from "./formulaires";
 
@@ -48,6 +49,7 @@ export default async function Referentiel() {
     id: string;
     plate_number: string;
     category: string;
+    vehicle_type: VehicleType;
     status: string;
     plan: string;
     places: number;
@@ -171,13 +173,18 @@ export default async function Referentiel() {
           {bus.length === 0 ? (
             <Empty>Aucun bus.</Empty>
           ) : (
-            <Table headers={["Plaque", "Catégorie", "Plan", "Places", "État"]}>
+            <Table headers={["Plaque", "Catégorie", "Type", "Plan", "Places", "État"]}>
               {bus.map((vehicule) => (
                 <tr key={vehicule.id}>
                   <td className="px-2 py-1.5 font-mono font-medium">{vehicule.plate_number}</td>
                   <td className="px-2 py-1.5">
                     <Badge tone={vehicule.category === "VIP" ? "accent" : "neutre"}>
                       {vehicule.category}
+                    </Badge>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <Badge tone={vehicule.vehicle_type === "VOITURE" ? "attention" : "neutre"}>
+                      {VEHICLE_TYPE_LABELS[vehicule.vehicle_type]}
                     </Badge>
                   </td>
                   <td className="px-2 py-1.5 text-xs text-texte-doux">{vehicule.plan}</td>

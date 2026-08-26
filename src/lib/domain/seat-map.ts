@@ -57,4 +57,7 @@ export const LAYOUT_PRESETS: Record<string, SeatMapLayout> = {
   "2+2": { columns: ["A", "B", AISLE, "C", "D"] },
   "2+3": { columns: ["A", "B", AISLE, "C", "D", "E"] },
   "1+2": { columns: ["A", AISLE, "B", "C"] },
+  // Voiture express : pas de couloir. 1 rangée = 4 places (berline) ;
+  // 2 rangées avec un siège désactivé = 7 places (minivan).
+  "Voiture — sans couloir": { columns: ["A", "B", "C", "D"] },
 };

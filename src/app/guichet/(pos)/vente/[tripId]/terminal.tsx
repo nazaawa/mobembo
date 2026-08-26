@@ -28,6 +28,7 @@ import {
 } from "@/lib/client/offline";
 import { useEnLigne, useStockageLocal } from "@/lib/client/store";
 import type { SeatAvailability } from "@/lib/domain/seats";
+import type { VehicleType } from "@/lib/domain/types";
 
 interface BilletEmis {
   id: string | null;
@@ -73,7 +74,7 @@ export function TerminalVente({
   prixUsd: number;
   prixCdf: number;
   disponibilite: SeatAvailability[];
-  trajet: { ligne: string; depart: string; plaque: string; categorie: string };
+  trajet: { ligne: string; depart: string; plaque: string; categorie: string; vehiculeType: VehicleType };
 }) {
   const router = useRouter();
   const enLigne = useEnLigne();

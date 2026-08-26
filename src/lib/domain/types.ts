@@ -60,6 +60,15 @@ export type DepartureMode = "HORAIRE_FIXE" | "DEPART_A_REMPLISSAGE";
 export type TripStatus = "PLANIFIE" | "EN_VENTE" | "PARTI" | "CLOTURE" | "ANNULE";
 export type BusCategory = "VIP" | "STANDARD";
 
+/** Type de véhicule — orthogonal à BusCategory, qui reste le confort (VIP/STANDARD). */
+export type VehicleType = "BUS" | "VOITURE";
+export const VEHICLE_TYPE_LABELS: Record<VehicleType, string> = {
+  BUS: "Bus",
+  VOITURE: "Voiture express",
+};
+
+export type PartnerApplicationType = "COMPAGNIE" | "INDEPENDANT";
+
 export type PaymentProviderId =
   | "MPESA"
   | "ORANGE_MONEY"

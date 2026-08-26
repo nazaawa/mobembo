@@ -4,7 +4,7 @@ import { FormulairePartenaire } from "./formulaire";
 
 export const metadata = {
   title: "Devenir partenaire | Mobembo",
-  description: "Inscrivez votre compagnie et gérez vos agences, destinations et départs.",
+  description: "Inscrivez votre compagnie ou votre véhicule et gérez vos destinations et départs.",
 };
 
 export default function InscriptionPartenaire() {
@@ -18,8 +18,8 @@ export default function InscriptionPartenaire() {
     <div className="mx-auto max-w-5xl pb-12">
       <div className="mb-8 max-w-3xl">
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">Espace partenaires</p>
-        <h1 className="mt-2 font-heading text-4xl font-bold tracking-tight text-navy sm:text-5xl">Faites entrer votre compagnie sur Mobembo.</h1>
-        <p className="mt-4 text-base leading-7 text-texte-doux">Après validation, votre direction pourra créer ses agences, ajouter ses destinations, enregistrer ses bus et publier ses départs.</p>
+        <h1 className="mt-2 font-heading text-4xl font-bold tracking-tight text-navy sm:text-5xl">Faites entrer votre compagnie ou votre véhicule sur Mobembo.</h1>
+        <p className="mt-4 text-base leading-7 text-texte-doux">Compagnie de bus ou chauffeur indépendant : après validation, vous pourrez créer vos lignes, enregistrer votre véhicule et publier vos départs.</p>
       </div>
       <div className="grid gap-6 lg:grid-cols-[1fr_1.6fr]">
         <aside className="space-y-5 rounded-[16px] bg-navy p-6 text-white">

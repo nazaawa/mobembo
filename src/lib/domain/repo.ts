@@ -10,6 +10,7 @@ import type {
   Role,
   TicketStatus,
   TripStatus,
+  VehicleType,
 } from "./types";
 import { DEFAULT_POLICY } from "./types";
 
@@ -77,6 +78,7 @@ export interface BusRow {
   plate_number: string;
   seat_map_id: string;
   category: BusCategory;
+  vehicle_type: VehicleType;
   status: string;
   created_at: string;
 }

@@ -166,6 +166,7 @@ function Resultat({ trajet }: { trajet: SearchResult }) {
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-semibold text-navy">{trajet.compagnie}</p>
             <Badge tone={trajet.categorie === "VIP" ? "accent" : "neutre"}>{trajet.categorie}</Badge>
+            {trajet.vehiculeType === "VOITURE" && <Badge tone="attention">Voiture express</Badge>}
             {trajet.placesRemisesEnVente > 0 && (
               <Badge tone="attention">{trajet.placesRemisesEnVente} en revente</Badge>
             )}
@@ -183,7 +184,7 @@ function Resultat({ trajet }: { trajet: SearchResult }) {
               <div className="my-1 flex items-center gap-1.5" aria-hidden>
                 <span className="h-1.5 w-1.5 rounded-full bg-accent" />
                 <span className="h-px flex-1 bg-bordure" />
-                <BusIcon />
+                {trajet.vehiculeType === "VOITURE" ? <CarIcon /> : <BusIcon />}
                 <span className="h-px flex-1 bg-bordure" />
                 <span className="h-1.5 w-1.5 rounded-full bg-navy" />
               </div>
@@ -239,4 +240,8 @@ function duree(minutes: number) {
 
 function BusIcon() {
   return <svg viewBox="0 0 24 24" className="h-4 w-4 text-accent" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="3" width="14" height="16" rx="3"/><path d="M7 7h10M8 16h8M8 21v-2M16 21v-2"/><circle cx="8" cy="13" r="1"/><circle cx="16" cy="13" r="1"/></svg>;
+}
+
+function CarIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4 text-accent" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 16V12l2-5h12l2 5v4"/><path d="M4 16h16M6 16v2M18 16v2"/><circle cx="7.5" cy="16" r="1.4"/><circle cx="16.5" cy="16" r="1.4"/></svg>;
 }

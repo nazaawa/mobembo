@@ -2,7 +2,7 @@ import { authed, body } from "@/lib/api/handler";
 import { getDb } from "@/lib/db";
 import { createBus } from "@/lib/domain/planning";
 import { errors } from "@/lib/core/errors";
-import type { BusCategory } from "@/lib/domain/types";
+import type { BusCategory, VehicleType } from "@/lib/domain/types";
 
 export const GET = authed(
   ["ADMIN_COMPAGNIE", "GERANT_AGENCE", "SUPER_ADMIN"],
@@ -19,12 +19,18 @@ export const GET = authed(
 
 export const POST = authed(["ADMIN_COMPAGNIE", "SUPER_ADMIN"], async ({ request, session }) => {
   if (!session.companyId) throw errors.invalid("Compagnie non déterminée.");
-  const input = await body<{ plaque: string; planId: string; categorie: BusCategory }>(request);
+  const input = await body<{
+    plaque: string;
+    planId: string;
+    categorie: BusCategory;
+    vehiculeType?: VehicleType;
+  }>(request);
   return await createBus({
     companyId: session.companyId,
     plateNumber: input.plaque,
     seatMapId: input.planId,
     category: input.categorie,
+    vehicleType: input.vehiculeType,
     actor: { userId: session.userId, role: session.activeRole },
   });
 });

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Field, inputClass, buttonClass, buttonSecondaryClass } from "@/components/ui";
 import { seatGrid, AISLE } from "@/lib/domain/seat-map";
-import type { SeatMapLayout, BusCategory } from "@/lib/domain/types";
+import type { SeatMapLayout, BusCategory, VehicleType } from "@/lib/domain/types";
+import { VEHICLE_TYPE_LABELS } from "@/lib/domain/types";
 
 function useEnvoi() {
   const router = useRouter();
@@ -93,6 +94,7 @@ export function FormulaireBus({ plans }: { plans: Array<{ id: string; name: stri
   const [plaque, setPlaque] = useState("");
   const [planId, setPlanId] = useState(plans[0]?.id ?? "");
   const [categorie, setCategorie] = useState<BusCategory>("STANDARD");
+  const [vehiculeType, setVehiculeType] = useState<VehicleType>("BUS");
 
   if (plans.length === 0) {
     return <p className="text-xs text-texte-doux">Créez d&apos;abord un plan de sièges.</p>;
@@ -100,14 +102,14 @@ export function FormulaireBus({ plans }: { plans: Array<{ id: string; name: stri
 
   return (
     <form
-      className="grid gap-3 sm:grid-cols-4"
+      className="grid gap-3 sm:grid-cols-5"
       onSubmit={async (event) => {
         event.preventDefault();
-        const data = await envoyer("/api/backoffice/bus", { plaque, planId, categorie });
+        const data = await envoyer("/api/backoffice/bus", { plaque, planId, categorie, vehiculeType });
         if (data) setPlaque("");
       }}
     >
-      <div className="sm:col-span-4">
+      <div className="sm:col-span-5">
         <Erreur message={erreur} />
       </div>
       <Field label="Plaque">
@@ -136,6 +138,16 @@ export function FormulaireBus({ plans }: { plans: Array<{ id: string; name: stri
         >
           <option value="STANDARD">Standard</option>
           <option value="VIP">VIP</option>
+        </select>
+      </Field>
+      <Field label="Type de véhicule">
+        <select
+          className={inputClass}
+          value={vehiculeType}
+          onChange={(e) => setVehiculeType(e.target.value as VehicleType)}
+        >
+          <option value="BUS">{VEHICLE_TYPE_LABELS.BUS}</option>
+          <option value="VOITURE">{VEHICLE_TYPE_LABELS.VOITURE}</option>
         </select>
       </Field>
       <div className="flex items-end">

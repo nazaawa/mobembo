@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS companies (
   name              TEXT NOT NULL,
   logo              TEXT,
   status            VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',      -- ACTIVE | SUSPENDUE
+  kind              VARCHAR(30) NOT NULL DEFAULT 'COMPAGNIE',   -- COMPAGNIE | INDEPENDANT — étiquette d'affichage
   commission_rate   DOUBLE NOT NULL DEFAULT 0.06,               -- §2.10 : 6 à 8 %
   currency_rate_usd_cdf DOUBLE NOT NULL DEFAULT 2800,           -- §3.2 taux daté
   currency_rate_at  VARCHAR(32),
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS buses (
   plate_number VARCHAR(30) NOT NULL,
   seat_map_id  VARCHAR(32) NOT NULL,
   category     VARCHAR(30) NOT NULL DEFAULT 'STANDARD',  -- VIP | STANDARD
+  vehicle_type VARCHAR(30) NOT NULL DEFAULT 'BUS',        -- BUS | VOITURE
   status       VARCHAR(30) NOT NULL DEFAULT 'ACTIF',
   created_at   VARCHAR(32) NOT NULL,
   UNIQUE (company_id, plate_number),
@@ -471,6 +473,7 @@ CREATE TABLE IF NOT EXISTS support_tickets (
 -- Onboarding des compagnies partenaires ------------------------------------
 CREATE TABLE IF NOT EXISTS partner_applications (
   id              VARCHAR(32) PRIMARY KEY,
+  application_type VARCHAR(30) NOT NULL DEFAULT 'COMPAGNIE', -- COMPAGNIE | INDEPENDANT
   company_name    TEXT NOT NULL,
   contact_name    TEXT NOT NULL,
   phone           VARCHAR(20) NOT NULL,
@@ -513,6 +516,14 @@ CREATE TABLE IF NOT EXISTS sync_log (
   client_time   VARCHAR(32),
   server_time   VARCHAR(32) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migrations additives (colonnes ajoutées après la création initiale des
+-- tables). Sur une base neuve, CREATE TABLE plus haut a déjà posé ces
+-- colonnes : l'ALTER échoue avec "Duplicate column name" (1060), ignoré par
+-- src/lib/db/index.ts au même titre que 1061 pour les index ci-dessous.
+ALTER TABLE buses ADD COLUMN vehicle_type VARCHAR(30) NOT NULL DEFAULT 'BUS';
+ALTER TABLE partner_applications ADD COLUMN application_type VARCHAR(30) NOT NULL DEFAULT 'COMPAGNIE';
+ALTER TABLE companies ADD COLUMN kind VARCHAR(30) NOT NULL DEFAULT 'COMPAGNIE';
 
 -- Index critiques (§3.5) --------------------------------------------------
 CREATE INDEX idx_trip_seats_trip_status ON trip_seats(trip_id, status);

@@ -14,9 +14,10 @@ import { newId } from "@/lib/core/ids";
 import { nowIso, plusDays } from "@/lib/core/time";
 import { toMinor } from "@/lib/core/money";
 import { DEFAULT_POLICY } from "@/lib/domain/types";
-import type { BusCategory, DepartureMode, SeatMapLayout } from "@/lib/domain/types";
+import type { BusCategory, DepartureMode, SeatMapLayout, VehicleType } from "@/lib/domain/types";
 import { LAYOUT_PRESETS } from "@/lib/domain/seat-map";
 import { createSeatMap, createBus, createRoute, createTrip } from "@/lib/domain/planning";
+import { createPartnerApplication, reviewPartnerApplication } from "@/lib/domain/partners";
 import { hashPassword } from "@/lib/auth/password";
 
 const MOT_DE_PASSE_DEMO = "mobembo2026";
@@ -55,7 +56,7 @@ type CompanyPlan = {
   agencies: Array<{ name: string; city: string; address: string }>;
   staff: StaffPlan[];
   seatMaps: Array<{ name: string; rows: number; layout: SeatMapLayout; disabledSeats: string[] }>;
-  buses: Array<{ plateNumber: string; seatMapIndex: number; category: BusCategory }>;
+  buses: Array<{ plateNumber: string; seatMapIndex: number; category: BusCategory; vehicleType?: VehicleType }>;
   routes: Array<{ originCity: string; destinationCity: string; distanceKm: number; durationEstMin: number }>;
   tripTemplates: TripTemplate[];
   daysAhead: number;
@@ -165,6 +166,7 @@ async function seedCompany(plan: CompanyPlan, now: string): Promise<CompanySumma
       plateNumber: bus.plateNumber,
       seatMapId: seatMapIds[bus.seatMapIndex],
       category: bus.category,
+      vehicleType: bus.vehicleType,
     });
     busIds.push(created.id);
   }
@@ -218,8 +220,9 @@ async function main(): Promise<void> {
   // Compte plateforme, commun à toutes les compagnies (§1.5 : rôle SUPER_ADMIN
   // sans company_id).
   const superAdmin = { phone: "+243810000001", name: "Équipe plateforme" };
+  const superAdminUserId = newId("usr");
   await tx(async (t) => {
-    const userId = newId("usr");
+    const userId = superAdminUserId;
     await t
       .prepare(
         `INSERT INTO users (id, phone, name, password_hash, status, locale, created_at)
@@ -328,12 +331,16 @@ async function main(): Promise<void> {
         { phone: "+243810000008", name: "Guichetier Lubumbashi", role: "GUICHETIER", agencyIndex: 0 },
         { phone: "+243810000009", name: "Contrôleur Route d'Or", role: "CONTROLEUR", agencyIndex: 0 },
       ],
-      seatMaps: [{ name: "Minibus 1+2 — 45 places", rows: 15, layout: LAYOUT_PRESETS["1+2"], disabledSeats: [] }],
+      seatMaps: [
+        { name: "Minibus 1+2 — 45 places", rows: 15, layout: LAYOUT_PRESETS["1+2"], disabledSeats: [] },
+        { name: "Berline 4 places", rows: 1, layout: LAYOUT_PRESETS["Voiture — sans couloir"], disabledSeats: [] },
+      ],
       buses: [
         { plateNumber: "LU 1023 GH", seatMapIndex: 0, category: "VIP" },
         { plateNumber: "LU 4477 IJ", seatMapIndex: 0, category: "STANDARD" },
         { plateNumber: "LU 8890 KL", seatMapIndex: 0, category: "VIP" },
         { plateNumber: "LU 2200 MN", seatMapIndex: 0, category: "STANDARD" },
+        { plateNumber: "LU 6600 VX", seatMapIndex: 1, category: "STANDARD", vehicleType: "VOITURE" },
       ],
       routes: [
         { originCity: "Lubumbashi", destinationCity: "Kolwezi", distanceKm: 350, durationEstMin: 300 },
@@ -381,6 +388,17 @@ async function main(): Promise<void> {
           prices: [{ category: "STANDARD", priceUsd: toMinor(14), priceCdf: toMinor(40180) }],
           quotas: { GUICHET: 25, EN_LIGNE: 15, RESERVE_COMPAGNIE: 5 },
         },
+        // Voiture express : même axe, capacité (4 places) et quotas à l'échelle.
+        {
+          label: "Kolwezi→Lubumbashi voiture express",
+          routeIndex: 1,
+          busIndex: 4,
+          agencyIndex: 1,
+          hour: 10,
+          mode: "HORAIRE_FIXE",
+          prices: [{ category: "STANDARD", priceUsd: toMinor(16), priceCdf: toMinor(45920) }],
+          quotas: { GUICHET: 2, EN_LIGNE: 2, RESERVE_COMPAGNIE: 0 },
+        },
       ],
       daysAhead: 7,
     },
@@ -390,6 +408,24 @@ async function main(): Promise<void> {
   for (const plan of plans) {
     summaries.push(await seedCompany(plan, now));
   }
+
+  // Chauffeur indépendant : passe par le même circuit qu'une compagnie
+  // (candidature → validation SUPER_ADMIN) — exerce le vrai chemin de code
+  // d'onboarding plutôt que d'insérer directement en base.
+  const independant = { phone: "+243810000010", name: "Fiston Kalala" };
+  const candidatureIndependant = await createPartnerApplication({
+    applicationType: "INDEPENDANT",
+    contactName: independant.name,
+    phone: independant.phone,
+    city: "Kinshasa",
+    destinations: "Kinshasa, Boma",
+  });
+  await reviewPartnerApplication({
+    applicationId: candidatureIndependant.id,
+    decision: "APPROUVER",
+    initialPassword: MOT_DE_PASSE_DEMO,
+    actor: { userId: superAdminUserId, role: "SUPER_ADMIN" },
+  });
 
   const counts = (await db
     .prepare<{ trajets: number; sieges: number; utilisateurs: number }>(
@@ -411,6 +447,13 @@ async function main(): Promise<void> {
     console.log(`  — ${summary.name} (${summary.agencyNames.join(", ")}) —`);
     for (const person of summary.staff) {
       console.log(`  ${person.phone}  ${person.role.padEnd(16)} ${person.name}`);
+    }
+  }
+  console.log(`  — Indépendant —`);
+  {
+    const roles = ["ADMIN_COMPAGNIE", "GERANT_AGENCE", "GUICHETIER"];
+    for (const role of roles) {
+      console.log(`  ${independant.phone}  ${role.padEnd(16)} ${independant.name}`);
     }
   }
   console.log("");

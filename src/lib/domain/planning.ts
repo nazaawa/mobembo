@@ -8,7 +8,7 @@ import { materialiseTripSeats } from "./seats";
 import { seatCountFor } from "./seat-map";
 import { assertOnlinePriceNotHigher } from "./settlements";
 import { getBus, getSeatMap, type RouteRow, type SeatMapRow, type TripRow } from "./repo";
-import type { BusCategory, Channel, DepartureMode, SeatMapLayout } from "./types";
+import type { BusCategory, Channel, DepartureMode, SeatMapLayout, VehicleType } from "./types";
 
 /** §2.1 Plan de sièges éditable graphiquement, jamais codé en dur. */
 export async function createSeatMap(params: {
@@ -127,6 +127,7 @@ export async function createBus(params: {
   plateNumber: string;
   seatMapId: string;
   category: BusCategory;
+  vehicleType?: VehicleType;
   actor?: { userId: string; role: string };
 }): Promise<{ id: string }> {
   return tx(async (db) => {
@@ -134,13 +135,14 @@ export async function createBus(params: {
     if (seatMap.company_id !== null && seatMap.company_id !== params.companyId) {
       throw errors.forbidden("Ce plan de sièges appartient à une autre compagnie.");
     }
+    const vehicleType = params.vehicleType ?? "BUS";
     const id = newId("bus");
     await db
       .prepare(
-        `INSERT INTO buses (id, company_id, plate_number, seat_map_id, category, status, created_at)
-       VALUES (?, ?, ?, ?, ?, 'ACTIF', ?)`,
+        `INSERT INTO buses (id, company_id, plate_number, seat_map_id, category, vehicle_type, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'ACTIF', ?)`,
       )
-      .run(id, params.companyId, params.plateNumber.toUpperCase(), params.seatMapId, params.category, nowIso());
+      .run(id, params.companyId, params.plateNumber.toUpperCase(), params.seatMapId, params.category, vehicleType, nowIso());
     if (params.actor) {
       await audit(
         {
@@ -150,7 +152,7 @@ export async function createBus(params: {
           action: "CREATION_BUS",
           entity: "bus",
           entityId: id,
-          after: { plaque: params.plateNumber, categorie: params.category },
+          after: { plaque: params.plateNumber, categorie: params.category, vehicule: vehicleType },
         },
         db,
       );
@@ -349,6 +351,7 @@ export interface SearchResult {
   depart: string;
   dureeEstimeeMin: number | null;
   categorie: BusCategory;
+  vehiculeType: VehicleType;
   prixUsd: number;
   prixCdf: number;
   placesEnLigne: number;
@@ -369,7 +372,7 @@ export async function searchTrips(params: {
       `SELECT t.id AS tripId, c.name AS compagnie, c.id AS companyId,
               r.origin_city AS origine, r.destination_city AS destination,
               t.departure_datetime AS depart, r.duration_est_min AS dureeEstimeeMin,
-              b.category AS categorie, p.price_usd AS prixUsd, p.price_cdf AS prixCdf,
+              b.category AS categorie, b.vehicle_type AS vehiculeType, p.price_usd AS prixUsd, p.price_cdf AS prixCdf,
               (SELECT COUNT(*) FROM trip_seats s
                 WHERE s.trip_id = t.id AND s.channel = 'EN_LIGNE' AND s.status = 'DISPONIBLE') AS placesEnLigne,
               (SELECT COUNT(*) FROM resale_listings l

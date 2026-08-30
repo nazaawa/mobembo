@@ -1,11 +1,16 @@
 # Guide de l'agence — sources
 
 Le livrable est `docs/guide-compagnie.pdf` (24 pages, texte sélectionnable,
-captures intégrées). Ce dossier contient de quoi le régénérer.
+captures intégrées).
 
 ```bash
 python3 docs/guide-compagnie/build.py
 ```
+
+**Le PDF et les captures ne sont pas versionnés** (voir `.gitignore`) : ce sont
+des artefacts d'environ 3 Mo qui changeraient à chaque retouche d'interface.
+Seuls les scripts qui les produisent sont suivis. Après un clone, refaites les
+captures (voir plus bas) avant de lancer `build.py`.
 
 Aucune dépendance : `pdf.py` écrit le PDF directement (polices base-14,
 captures JPEG en DCTDecode). Le poste de développement n'a ni Chrome headless

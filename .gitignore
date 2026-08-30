@@ -42,3 +42,13 @@ next-env.d.ts
 
 # base SQLite locale (recréée par `npm run seed`)
 /data
+
+# Guide de l'agence : le PDF et ses captures sont des artefacts lourds (~3 Mo)
+# régénérés par `python3 docs/guide-compagnie/build.py`. Les scripts qui les
+# produisent, eux, restent versionnés.
+/docs/guide-compagnie.pdf
+/docs/guide-compagnie/captures/
+
+# Python
+__pycache__/
+*.pyc

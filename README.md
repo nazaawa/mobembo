@@ -203,7 +203,7 @@ bloquerait silencieusement des sièges pendant des jours.
 
 | Document                                            | Public                     |
 | --------------------------------------------------- | -------------------------- |
-| [Guide de l'agence (PDF)](docs/guide-compagnie.pdf)  | compagnies partenaires     |
+| [Guide de l'agence](docs/guide-compagnie/README.md)  | compagnies partenaires — PDF de 24 pages, produit localement |
 | [Spécification technique](docs/specification.md)     | équipe de développement    |
 | [Modèle de données](docs/modele-de-donnees.md)       | équipe, audit              |
 | [Guide guichetier](docs/guide-guichetier.md)         | agents de vente            |

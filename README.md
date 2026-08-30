@@ -1,18 +1,73 @@
-# Mobembo — plateforme de billetterie bus, RDC
+# Mobembo — transport interurbain, RDC
 
-Implémentation complète du cahier des charges v1.0 : **une seule application
-Next.js**, frontend et backend, couvrant les trois phases du projet.
+**Une seule application Next.js**, frontend et backend, construite par phases :
+référencement et recherche d'abord, réservation ensuite, billetterie complète
+pour les agences qui la demandent.
 
-> **Règle non négociable (§1.2).** La base de données est la seule source de
-> vérité sur l'état d'un siège. Aucun siège n'est vendu, réservé, bloqué ou
-> annulé en dehors du système — ni au guichet, ni par téléphone, ni par le
-> chauffeur. Toute l'architecture découle de cette contrainte.
+> **Rien n'est imposé à une agence (note fonctionnelle, §6).** Le référencement
+> est gratuit. Une agence peut publier ses trajets, ses tarifs et ses contacts
+> sans vendre un seul billet en ligne, sans ERP et sans changer sa façon de
+> travailler. Chaque phase suivante est un choix qu'elle fait, pas un préalable.
+
+> **Règle non négociable de la billetterie (§1.2).** Dès qu'une agence vend en
+> ligne, la base de données devient la seule source de vérité sur l'état d'un
+> siège. Aucun siège n'est vendu, réservé, bloqué ou annulé en dehors du
+> système — ni au guichet, ni par téléphone, ni par le chauffeur.
+
+## Les deux modèles d'offre
+
+Un voyageur cherche un départ ; il ne doit pas savoir quel niveau de
+numérisation l'agence a atteint. La recherche fond donc deux modèles dans une
+seule liste, en disant avant le clic ce que chacun permet :
+
+| Objet | Ce qu'il exige de l'agence | Ce que le voyageur peut faire |
+| ----- | -------------------------- | ----------------------------- |
+| `schedules` — trajet publié (phase 1) | deux villes, une heure, des jours, un prix | consulter, appeler, WhatsApp, itinéraire |
+| `schedules` + quota (phase 2) | + un nombre de places ouvertes par départ | réserver une place, sans payer |
+| `schedule_tickets` — billet payé (phase 3) | + accepter 10 % de commission | payer par Mobile Money, billet QR **sans siège** |
+| `trips` — départ programmé (phase 4) | + bus, plan de sièges, tarifs en deux devises | choisir son siège, payer, billet QR numéroté |
+
+La phase 3 se greffe sur la réservation de phase 2 : §14.1 dit « après
+réservation, le voyageur choisit un moyen de paiement ». Son billet ne porte
+aucun siège — §14.3 n'en met pas, et « sélectionner la place » appartient à la
+phase 4 (§19.2), au même titre que la gestion des véhicules (§19.4).
+
+Une agence peut n'utiliser que la première ligne, indéfiniment. Les tables
+`trips`, `trip_seats`, `tickets` et tout le POS restent intacts à côté, pour
+celles qui montent.
+
+## Ce qu'une agence voit
+
+Une agence référencée hier n'a pas à comprendre un ERP pour commencer. Le
+back-office n'affiche que les phases qui lui sont ouvertes (§29 : « les
+fonctions affichées dépendent du rôle et de la phase activée pour l'agence »),
+et une entrée fermée n'apparaît pas grisée : elle n'apparaît pas.
+
+| Phase | Module | Écrans ajoutés | Qui l'ouvre |
+| ----- | ------ | -------------- | ----------- |
+| 1 | *socle, jamais fermé* | Tableau de bord, Trajets publiés, Fiche publique, Utilisateurs, Paramètres | — |
+| 2 | `RESERVATION` | Réservations | équipe Mobembo |
+| 3 | `PAIEMENT` | Paiements et billets, Reversements | équipe Mobembo |
+| 4 | `ERP` | Planification, Référentiel, Guichet, Rapports, Journal d'audit | équipe Mobembo |
+| 5 | `CONTROLE` | Application contrôleur | équipe Mobembo |
+
+Deux niveaux, jamais confondus :
+
+- **`companies.modules`** — ce que Mobembo a ouvert, depuis `/administration`.
+  Une nouvelle agence reçoit `["RESERVATION"]` et rien d'autre.
+- **`companies.advanced_view`** — l'interrupteur « Vue complète » du directeur,
+  dans `/backoffice/parametres`. Il replie l'affichage sur l'essentiel sans rien
+  fermer : les ventes, billets et données continuent. Il ne peut jamais élargir
+  ce que Mobembo a ouvert.
+
+Un écran fermé ne dit pas « accès refusé » : il explique ce que la phase
+apporte, ce qu'elle demande en retour, et comment la demander.
 
 ## Démarrage
 
 ```bash
 npm install
-npm run seed     # jeu de démonstration : 1 compagnie, 2 agences, 3 axes, 28 départs
+npm run seed     # démonstration : 2 compagnies complètes, 2 agences référencées seulement, 5 trajets publiés
 npm run dev      # http://localhost:3000
 ```
 
@@ -27,6 +82,12 @@ Mot de passe commun : `mobembo2026`
 | `+243810000003` | `GERANT_AGENCE`   | back-office + guichet        |
 | `+243810000004` | `GUICHETIER`      | POS guichet                  |
 | `+243810000005` | `CONTROLEUR`      | app contrôleur               |
+| `+243810000020` | `ADMIN_COMPAGNIE` | Kongo Express — référencée seulement, aucune réservation en ligne |
+| `+243810000021` | `ADMIN_COMPAGNIE` | Étoile du Kasaï — référencée, quelques places ouvertes en ligne |
+
+Les deux derniers comptes sont là pour vérifier la promesse : ces agences n'ont
+ni bus enregistré, ni plan de sièges, ni caisse, et sont pourtant visibles dans
+la recherche et l'annuaire.
 
 Les passagers n'ont pas de mot de passe : connexion par OTP SMS (§2.5.4). En
 développement, le code est affiché à l'écran plutôt qu'envoyé.
@@ -42,15 +103,30 @@ pour que les cas de recette §5.2 soient rejouables sans passerelle :
 | `9999`                  | aucune réponse → `INDETERMINE` + ticket support  |
 | autre                   | confirmation au premier polling                  |
 
-## Les quatre interfaces
+## Les interfaces
 
-| Chemin        | Interface        | Cahier des charges |
-| ------------- | ---------------- | ------------------ |
-| `/`           | PWA passager     | §2.5, §2.6, §2.9   |
-| `/guichet`    | POS guichet      | §2.4               |
-| `/controle`   | App contrôleur   | §2.7               |
-| `/backoffice` | Back-office      | §2.1-2.3, §2.10-11 |
-| `/api-doc`    | API documentée   | §4.2               |
+| Chemin                | Interface                        | Phase |
+| --------------------- | -------------------------------- | ----- |
+| `/`                   | Accueil et recherche             | 1     |
+| `/recherche`          | Résultats, deux modèles fondus   | 1-2   |
+| `/agences`            | Annuaire des agences référencées | 1     |
+| `/agences/[slug]`     | Fiche agence publique            | 1     |
+| `/horaire/[id]`       | Fiche trajet + réservation       | 1-2   |
+| `/mes-reservations`   | Réservations du voyageur (OTP)   | 2     |
+| `/paiement/[id]`      | Paiement Mobile Money d'une réservation | 3 |
+| `/billet-reservation/[id]` | Billet numérique QR, partage | 3     |
+| `/mes-billets`        | Billets payés : à venir, utilisés, annulés, expirés | 3 |
+| `/trajet/[id]`        | Choix du siège                   | 4     |
+| `/backoffice`         | Espace agence                    | 1-4   |
+| `/guichet`            | POS guichet                      | 4     |
+| `/controle`           | App contrôleur                   | 5     |
+| `/administration`     | Plateforme, indicateurs §7       | —     |
+| `/api-doc`            | API documentée                   | —     |
+
+Le back-office suit le même dégradé : « Ma présence Mobembo » (trajets publiés,
+réservations, fiche publique) précède « Exploitation » (planification,
+référentiel), et le bloc billetterie du tableau de bord n'apparaît que lorsque
+l'agence l'utilise réellement.
 
 ## Commandes
 
@@ -60,7 +136,7 @@ npm run build      # build de production
 npm run start      # serveur de production
 npm run seed       # (ré)initialise le jeu de démonstration
 npm run schema:export  # régénère src/lib/db/schema.sql depuis le module canonique
-npm test           # cahier de tests §5.2 — 40 cas (base MySQL de test dédiée)
+npm test           # cahier de tests — 100 cas (base MySQL de test dédiée)
 npm run typecheck  # TypeScript strict
 npm run lint       # ESLint + React Compiler
 ```
@@ -73,18 +149,24 @@ src/
     core/       ids, horodatage serveur, monnaie entière, erreurs métier
     db/         schema.ts (§3.5) + pool MySQL (mysql2) + transactions verrouillées
     domain/     règles métier — le cœur, sans dépendance à Next.js
+                modules/access : phases ouvertes par agence (§29)
+                schedules/reservations/directory : phases 1-2
+                reservation-payments : paiement IdoloPay + billet QR (phase 3)
+                offers : fusion des deux modèles pour la recherche
+                planning/seats/bookings/tickets : billetterie complète
     auth/       sessions signées, scrypt, OTP, rôles
     payments/   abstraction PaymentProvider + opérateur simulé
     sms/        passerelle avec basculement fournisseur
     client/     stockage hors-ligne POS et contrôleur, vérification QR navigateur
     api/        enveloppe des route handlers
   app/
-    (passager)/ PWA passager
+    (passager)/ accueil, recherche, annuaire, fiches, réservations, billets
     guichet/    POS
     controle/   app contrôleur
-    backoffice/ back-office
-    api/        34 points d'entrée REST
-tests/          cahier de tests §5.2
+    backoffice/ espace agence — présence Mobembo puis exploitation
+    administration/ plateforme : partenaires, annuaire, indicateurs §7
+    api/        points d'entrée REST
+tests/          cahier de tests
 scripts/seed.ts jeu de démonstration
 ```
 
@@ -121,6 +203,7 @@ bloquerait silencieusement des sièges pendant des jours.
 
 | Document                                            | Public                     |
 | --------------------------------------------------- | -------------------------- |
+| [Guide de l'agence (PDF)](docs/guide-compagnie.pdf)  | compagnies partenaires     |
 | [Spécification technique](docs/specification.md)     | équipe de développement    |
 | [Modèle de données](docs/modele-de-donnees.md)       | équipe, audit              |
 | [Guide guichetier](docs/guide-guichetier.md)         | agents de vente            |

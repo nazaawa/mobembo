@@ -3,26 +3,71 @@ import { redirect } from "next/navigation";
 import { currentSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/domain/types";
+import { companyAccess, showsModule } from "@/lib/domain/access";
+import type { CompanyModule } from "@/lib/domain/modules";
 import { MobemboLogo } from "@/components/brand";
 import { BackofficeNavigation } from "./navigation";
 
 export const dynamic = "force-dynamic";
 
-const GROUPES = [
-  { label: "Exploitation", items: [
-    { href: "/backoffice", label: "Tableau de bord", icon: "grid" },
-    { href: "/backoffice/planification", label: "Planification", icon: "calendar" },
-    { href: "/backoffice/referentiel", label: "Référentiel", icon: "bus" },
-  ] },
-  { label: "Finances", items: [
-    { href: "/backoffice/rapports", label: "Rapports", icon: "chart" },
-    { href: "/backoffice/reversements", label: "Reversements", icon: "wallet" },
-  ] },
-  { label: "Gouvernance", items: [
-    { href: "/backoffice/audit", label: "Journal d'audit", icon: "journal" },
-    { href: "/backoffice/utilisateurs", label: "Utilisateurs", icon: "users" },
-    { href: "/backoffice/parametres", label: "Paramètres", icon: "settings" },
-  ] },
+type Item = {
+  href: string;
+  label: string;
+  icon: string;
+  /** Module requis. Absent = socle phase 1, toujours visible. */
+  module?: CompanyModule;
+  /** Rôles autorisés. Absent = tous les rôles du back-office. */
+  roles?: string[];
+};
+
+/**
+ * Navigation par phase, pas par exhaustivité.
+ *
+ * §29 : « Les fonctions affichées dépendent du rôle et de la phase activée pour
+ * l'agence. » Une agence référencée hier voit quatre entrées ; elle en verra
+ * douze le jour où elle aura demandé les phases correspondantes. Une entrée
+ * n'apparaît jamais « grisée » : un menu plein de portes fermées apprend à
+ * ignorer le menu.
+ */
+const GROUPES: ReadonlyArray<{ label: string; items: ReadonlyArray<Item> }> = [
+  {
+    label: "Ma présence Mobembo",
+    items: [
+      { href: "/backoffice", label: "Tableau de bord", icon: "grid" },
+      { href: "/backoffice/horaires", label: "Trajets publiés", icon: "calendar" },
+      { href: "/backoffice/reservations", label: "Réservations", icon: "users", module: "RESERVATION" },
+      { href: "/backoffice/billets", label: "Paiements et billets", icon: "wallet", module: "PAIEMENT" },
+      { href: "/backoffice/vitrine", label: "Fiche publique", icon: "pin" },
+    ],
+  },
+  {
+    label: "Exploitation",
+    items: [
+      { href: "/backoffice/planification", label: "Planification", icon: "calendar", module: "ERP" },
+      { href: "/backoffice/referentiel", label: "Référentiel", icon: "bus", module: "ERP" },
+    ],
+  },
+  {
+    label: "Finances",
+    items: [
+      { href: "/backoffice/rapports", label: "Rapports", icon: "chart", module: "ERP", roles: ["ADMIN_COMPAGNIE", "SUPER_ADMIN"] },
+      { href: "/backoffice/reversements", label: "Reversements", icon: "wallet", module: "PAIEMENT", roles: ["ADMIN_COMPAGNIE", "SUPER_ADMIN"] },
+    ],
+  },
+  {
+    label: "Gouvernance",
+    items: [
+      // §5.2 « Gestion des utilisateurs de l'agence » est une fonction de la
+      // phase 1 : un responsable délègue la mise à jour de ses horaires dès le
+      // premier jour.
+      { href: "/backoffice/utilisateurs", label: "Utilisateurs", icon: "users", roles: ["ADMIN_COMPAGNIE", "SUPER_ADMIN"] },
+      { href: "/backoffice/audit", label: "Journal d'audit", icon: "journal", module: "ERP", roles: ["ADMIN_COMPAGNIE", "SUPER_ADMIN"] },
+      // Les paramètres restent toujours accessibles au directeur : c'est là que
+      // vit l'interrupteur de vue, et un écran qui se cacherait lui-même serait
+      // impossible à rouvrir.
+      { href: "/backoffice/parametres", label: "Paramètres", icon: "settings", roles: ["ADMIN_COMPAGNIE", "SUPER_ADMIN"] },
+    ],
+  },
 ] as const;
 
 export default async function BackofficeLayout({ children }: LayoutProps<"/backoffice">) {
@@ -32,14 +77,20 @@ export default async function BackofficeLayout({ children }: LayoutProps<"/backo
   }
   if (session.activeRole === "SUPER_ADMIN" && !session.companyId) redirect("/administration");
 
-  const groupes = session.activeRole === "GERANT_AGENCE"
-    ? GROUPES.map((group) => ({
-        ...group,
-        items: group.items.filter((item) =>
-          ["/backoffice", "/backoffice/planification", "/backoffice/referentiel"].includes(item.href),
-        ),
-      })).filter((group) => group.items.length > 0)
-    : GROUPES;
+  const acces = await companyAccess(session.companyId!);
+
+  const groupes = GROUPES.map((group) => ({
+    label: group.label,
+    items: group.items.filter(
+      (item) =>
+        (!item.module || showsModule(acces, item.module)) &&
+        (!item.roles || item.roles.includes(session.activeRole)),
+    ),
+  })).filter((group) => group.items.length > 0);
+
+  // Un module ouvert par Mobembo mais masqué par la vue simplifiée serait un
+  // cadeau invisible : le directeur est prévenu, une fois, là où il regarde.
+  const masques = acces.modules.filter((module) => !acces.visible.includes(module));
 
   const alertes = (await getDb()
     .prepare(
@@ -61,7 +112,9 @@ export default async function BackofficeLayout({ children }: LayoutProps<"/backo
           <span className="rounded-[10px] bg-white px-3 py-2"><MobemboLogo alt="" className="h-7 w-auto" /></span>
         </Link>
         <div className="px-5 pt-5">
-          <span className="inline-flex rounded-md bg-white/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/75">Back-office</span>
+          <span className="inline-flex rounded-md bg-white/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/75">
+            {acces.advancedView ? "Back-office" : "Vue simplifiée"}
+          </span>
         </div>
         <BackofficeNavigation groups={groupes} />
         <div className="mt-auto border-t border-white/10 p-5">
@@ -80,8 +133,8 @@ export default async function BackofficeLayout({ children }: LayoutProps<"/backo
               <span className="rounded bg-accent-doux px-1.5 py-0.5 text-[10px] font-bold text-accent">Admin</span>
             </Link>
             <div className="hidden lg:block">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-texte-doux">Pilotage compagnie</p>
-              <p className="text-sm font-semibold text-navy">Vue opérationnelle</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-texte-doux">Espace agence</p>
+              <p className="text-sm font-semibold text-navy">{acces.name}</p>
             </div>
             <div className="flex items-center gap-3">
               {alertes.n > 0 && (
@@ -98,7 +151,21 @@ export default async function BackofficeLayout({ children }: LayoutProps<"/backo
           </div>
           <div className="border-t border-bordure px-4 lg:hidden"><BackofficeNavigation groups={groupes} mobile /></div>
         </header>
-        <main className="mx-auto w-full max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+        <main className="mx-auto w-full max-w-[96rem] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          {masques.length > 0 && session.activeRole === "ADMIN_COMPAGNIE" && (
+            <p className="mb-5 rounded-lg border border-accent/25 bg-accent-doux px-4 py-3 text-sm leading-6 text-texte">
+              <strong className="font-semibold text-navy">
+                {masques.length} module{masques.length > 1 ? "s" : ""} ouvert
+                {masques.length > 1 ? "s" : ""} par Mobembo, mais masqué
+                {masques.length > 1 ? "s" : ""} par votre vue simplifiée.
+              </strong>{" "}
+              <Link href="/backoffice/parametres" className="font-semibold text-accent underline">
+                Afficher la vue complète
+              </Link>
+            </p>
+          )}
+          {children}
+        </main>
       </div>
     </div>
   );

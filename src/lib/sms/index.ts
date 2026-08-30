@@ -39,7 +39,11 @@ export type SmsKind =
   | "TRANSFERT"
   | "ANNULATION"
   | "REMBOURSEMENT"
-  | "AVOIR";
+  | "AVOIR"
+  // Phase 2 : la réservation légère n'émet pas de billet, le SMS est donc la
+  // seule trace que le voyageur emporte au point d'embarquement.
+  | "RESERVATION"
+  | "RESERVATION_ANNULEE";
 
 export async function sendSms(
   phone: string,

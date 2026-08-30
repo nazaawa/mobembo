@@ -2,44 +2,56 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type { SearchResult } from "@/lib/domain/planning";
+import type { BookingMode, TravelOffer } from "@/lib/domain/offers";
 import { formatTime, hourInKinshasa } from "@/lib/core/time";
-import { Badge, Money } from "@/components/ui";
+import { ContactAgence, MiseAJour, ModeReservation, PrixOffre } from "@/components/offre";
 
 type Periode = "TOUS" | "MATIN" | "APRES_MIDI" | "SOIR";
 type Tri = "DEPART" | "PRIX" | "PLACES";
 
-export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
-  const categories = Array.from(new Set(resultats.map((trajet) => trajet.categorie)));
-  const [selectionCategories, setSelectionCategories] = useState<string[]>(categories);
+const MODES: Array<{ value: BookingMode; label: string }> = [
+  { value: "SIEGE", label: "Siège et paiement en ligne" },
+  { value: "PLACES", label: "Réservation en ligne" },
+  { value: "CONTACT", label: "Contact avec l’agence" },
+];
+
+/**
+ * Une seule liste de départs, deux niveaux de service.
+ *
+ * Le filtre « ce que je peux faire » remplace l'ancien filtre de catégorie de
+ * bus : sur un axe où une compagnie vend en ligne et trois autres publient
+ * seulement leurs horaires, c'est la question que se pose réellement le
+ * voyageur avant de cliquer.
+ */
+export function ResultatsTrajets({ resultats }: { resultats: TravelOffer[] }) {
+  const modesPresents = MODES.filter((mode) =>
+    resultats.some((offre) => offre.bookingMode === mode.value),
+  );
+  const [modes, setModes] = useState<BookingMode[]>(modesPresents.map((mode) => mode.value));
   const [periode, setPeriode] = useState<Periode>("TOUS");
-  const [disponiblesSeulement, setDisponiblesSeulement] = useState(true);
   const [tri, setTri] = useState<Tri>("DEPART");
 
   const affiches = useMemo(() => {
-    const filtres = resultats.filter((trajet) => {
-      const heure = hourInKinshasa(trajet.depart);
-      const places = trajet.placesEnLigne + trajet.placesRemisesEnVente;
+    const filtres = resultats.filter((offre) => {
+      const heure = hourInKinshasa(offre.depart);
       const bonnePeriode =
         periode === "TOUS" ||
         (periode === "MATIN" && heure < 12) ||
         (periode === "APRES_MIDI" && heure >= 12 && heure < 18) ||
         (periode === "SOIR" && heure >= 18);
-      return (
-        selectionCategories.includes(trajet.categorie) &&
-        bonnePeriode &&
-        (!disponiblesSeulement || places > 0)
-      );
+      return modes.includes(offre.bookingMode) && bonnePeriode;
     });
 
     return [...filtres].sort((a, b) => {
-      if (tri === "PRIX") return a.prixUsd - b.prixUsd;
+      if (tri === "PRIX") {
+        return (a.prixUsd ?? Number.MAX_SAFE_INTEGER) - (b.prixUsd ?? Number.MAX_SAFE_INTEGER);
+      }
       if (tri === "PLACES") {
-        return b.placesEnLigne + b.placesRemisesEnVente - (a.placesEnLigne + a.placesRemisesEnVente);
+        return (b.placesDisponibles ?? -1) - (a.placesDisponibles ?? -1);
       }
       return new Date(a.depart).getTime() - new Date(b.depart).getTime();
     });
-  }, [disponiblesSeulement, periode, resultats, selectionCategories, tri]);
+  }, [modes, periode, resultats, tri]);
 
   // Rendu deux fois (panneau desktop + <details> mobile) : le `name` du radio
   // doit varier entre les deux copies, sinon le navigateur les traite comme
@@ -47,17 +59,17 @@ export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
   // React coche l'autre.
   const filtres = (idSuffix: string) => (
     <div className="space-y-6">
-      <FilterSection title="Catégorie">
-        {categories.map((categorie) => (
+      <FilterSection title="Réservation">
+        {modesPresents.map((mode) => (
           <CheckFilter
-            key={categorie}
-            checked={selectionCategories.includes(categorie)}
-            label={categorie}
+            key={mode.value}
+            checked={modes.includes(mode.value)}
+            label={mode.label}
             onChange={() =>
-              setSelectionCategories((current) =>
-                current.includes(categorie)
-                  ? current.filter((item) => item !== categorie)
-                  : [...current, categorie],
+              setModes((current) =>
+                current.includes(mode.value)
+                  ? current.filter((item) => item !== mode.value)
+                  : [...current, mode.value],
               )
             }
           />
@@ -85,21 +97,12 @@ export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
         ))}
       </FilterSection>
 
-      <FilterSection title="Disponibilité">
-        <CheckFilter
-          checked={disponiblesSeulement}
-          label="Places disponibles"
-          onChange={() => setDisponiblesSeulement((value) => !value)}
-        />
-      </FilterSection>
-
       <button
         type="button"
         className="text-sm font-semibold text-accent hover:underline"
         onClick={() => {
-          setSelectionCategories(categories);
+          setModes(modesPresents.map((mode) => mode.value));
           setPeriode("TOUS");
-          setDisponiblesSeulement(true);
         }}
       >
         Réinitialiser les filtres
@@ -121,8 +124,8 @@ export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
         </details>
 
         <div className="flex flex-col gap-3 rounded-[14px] border border-bordure bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-semibold text-navy">
-            {affiches.length} option{affiches.length > 1 ? "s" : ""} correspondante{affiches.length > 1 ? "s" : ""}
+          <p aria-live="polite" className="text-sm font-semibold text-navy">
+            {affiches.length} départ{affiches.length > 1 ? "s" : ""} affiché{affiches.length > 1 ? "s" : ""}
           </p>
           <label className="flex items-center gap-2 text-sm text-texte-doux">
             Trier par
@@ -140,12 +143,16 @@ export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
 
         {affiches.length === 0 ? (
           <div className="rounded-[14px] border border-dashed border-bordure bg-surface px-6 py-12 text-center">
-            <h3 className="font-semibold text-navy">Aucun départ avec ces filtres</h3>
-            <p className="mt-1 text-sm text-texte-doux">Élargissez une catégorie ou une plage horaire.</p>
+            <h3 className="font-heading font-bold text-navy">Aucun départ avec ces filtres</h3>
+            <p className="mt-1 text-sm text-texte-doux">
+              Rouvrez un mode de réservation ou élargissez la plage horaire.
+            </p>
           </div>
         ) : (
           <ul className="space-y-3">
-            {affiches.map((trajet) => <Resultat key={trajet.tripId} trajet={trajet} />)}
+            {affiches.map((offre) => (
+              <Resultat key={`${offre.kind}-${offre.id}`} offre={offre} />
+            ))}
           </ul>
         )}
       </section>
@@ -153,63 +160,128 @@ export function ResultatsTrajets({ resultats }: { resultats: SearchResult[] }) {
   );
 }
 
-function Resultat({ trajet }: { trajet: SearchResult }) {
-  const places = trajet.placesEnLigne + trajet.placesRemisesEnVente;
-  const arrivee = trajet.dureeEstimeeMin
-    ? new Date(new Date(trajet.depart).getTime() + trajet.dureeEstimeeMin * 60_000).toISOString()
+function Resultat({ offre }: { offre: TravelOffer }) {
+  const arrivee = offre.dureeEstimeeMin
+    ? new Date(new Date(offre.depart).getTime() + offre.dureeEstimeeMin * 60_000).toISOString()
     : null;
+  const places = (offre.placesDisponibles ?? 0) + offre.placesRemisesEnVente;
 
   return (
     <li className="rounded-[14px] border border-bordure bg-surface p-4 shadow-[0_4px_16px_rgba(8,22,45,0.04)] transition hover:border-accent/45 hover:shadow-[0_12px_30px_rgba(8,22,45,0.08)] sm:p-5">
       <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-semibold text-navy">{trajet.compagnie}</p>
-            <Badge tone={trajet.categorie === "VIP" ? "accent" : "neutre"}>{trajet.categorie}</Badge>
-            {trajet.vehiculeType === "VOITURE" && <Badge tone="attention">Voiture express</Badge>}
-            {trajet.placesRemisesEnVente > 0 && (
-              <Badge tone="attention">{trajet.placesRemisesEnVente} en revente</Badge>
+            {offre.companySlug ? (
+              <Link href={`/agences/${offre.companySlug}`} className="font-semibold text-navy hover:text-accent">
+                {offre.compagnie}
+              </Link>
+            ) : (
+              <p className="font-semibold text-navy">{offre.compagnie}</p>
+            )}
+            <ModeReservation mode={offre.bookingMode} />
+            {offre.categorie === "VIP" && (
+              <span className="rounded-md border border-accent/30 bg-accent-doux px-2 py-0.5 text-[11px] font-semibold text-accent">
+                VIP
+              </span>
+            )}
+            {offre.vehiculeType === "VOITURE" && (
+              <span className="rounded-md border border-attention/30 bg-attention-doux px-2 py-0.5 text-[11px] font-medium text-attention">
+                {offre.vehiculeLabel ?? "Voiture express"}
+              </span>
+            )}
+            {offre.placesRemisesEnVente > 0 && (
+              <span className="rounded-md border border-attention/30 bg-attention-doux px-2 py-0.5 text-[11px] font-medium text-attention">
+                {offre.placesRemisesEnVente} en revente
+              </span>
             )}
           </div>
 
           <div className="mt-4 grid grid-cols-[auto_minmax(4rem,1fr)_auto] items-center gap-3">
             <div>
-              <p className="text-2xl font-bold tabular-nums text-navy">{formatTime(trajet.depart)}</p>
-              <p className="text-xs text-texte-doux">{trajet.origine}</p>
+              <p className="font-heading text-2xl font-bold tabular-nums text-navy">
+                {formatTime(offre.depart)}
+              </p>
+              <p className="text-xs text-texte-doux">{offre.origine}</p>
             </div>
             <div className="text-center">
               <p className="text-[11px] text-texte-doux">
-                {trajet.dureeEstimeeMin ? duree(trajet.dureeEstimeeMin) : "Durée à confirmer"}
+                {offre.dureeEstimeeMin ? duree(offre.dureeEstimeeMin) : "Durée à confirmer"}
               </p>
               <div className="my-1 flex items-center gap-1.5" aria-hidden>
                 <span className="h-1.5 w-1.5 rounded-full bg-accent" />
                 <span className="h-px flex-1 bg-bordure" />
-                {trajet.vehiculeType === "VOITURE" ? <CarIcon /> : <BusIcon />}
+                {offre.vehiculeType === "VOITURE" ? <CarIcon /> : <BusIcon />}
                 <span className="h-px flex-1 bg-bordure" />
                 <span className="h-1.5 w-1.5 rounded-full bg-navy" />
               </div>
               <p className="text-[11px] text-texte-doux">Direct</p>
             </div>
             <div className="text-right">
-              <p className="text-2xl font-bold tabular-nums text-navy">{arrivee ? formatTime(arrivee) : "—"}</p>
-              <p className="text-xs text-texte-doux">{trajet.destination}</p>
+              <p className="font-heading text-2xl font-bold tabular-nums text-navy">
+                {arrivee ? formatTime(arrivee) : "—"}
+              </p>
+              <p className="text-xs text-texte-doux">{offre.destination}</p>
             </div>
           </div>
+
+          {offre.pointEmbarquement && (
+            <p className="mt-3 text-sm text-texte-doux">
+              <span className="font-semibold text-navy">Départ :</span> {offre.pointEmbarquement}
+            </p>
+          )}
+
+          {offre.misAJour ? (
+            <div className="mt-2.5">
+              <MiseAJour iso={offre.misAJour} />
+            </div>
+          ) : (
+            <p className="mt-2.5 text-xs text-texte-doux">Disponibilité en temps réel</p>
+          )}
         </div>
 
-        <div className="border-t border-bordure pt-4 md:min-w-44 md:border-l md:border-t-0 md:pl-5 md:pt-0 md:text-right">
-          <p className="text-xs text-texte-doux">À partir de</p>
-          <p className="mt-0.5 text-xl font-bold text-navy"><Money amount={trajet.prixUsd} currency="USD" /></p>
-          <p className="text-xs text-texte-doux"><Money amount={trajet.prixCdf} currency="CDF" /></p>
-          <p className={`mt-2 text-xs font-medium ${places <= 5 ? "text-attention" : "text-succes"}`}>
-            {places > 0 ? `${places} place${places > 1 ? "s" : ""} disponible${places > 1 ? "s" : ""}` : "Complet en ligne"}
+        <div className="border-t border-bordure pt-4 md:min-w-48 md:border-l md:border-t-0 md:pl-5 md:pt-0">
+          <div className="md:text-right">
+            <PrixOffre usd={offre.prixUsd} cdf={offre.prixCdf} indicatif={offre.prixIndicatif} />
+          </div>
+
+          <p className="mt-2 text-xs font-medium md:text-right">
+            {offre.bookingMode === "CONTACT" ? (
+              <span className="text-texte-doux">Places gérées par l’agence</span>
+            ) : places > 0 ? (
+              <span className={places <= 5 ? "text-attention" : "text-succes"}>
+                {places} place{places > 1 ? "s" : ""} en ligne
+                {offre.placesOffertes !== null && ` sur ${offre.placesOffertes}`}
+              </span>
+            ) : (
+              <span className="text-texte-doux">Complet en ligne</span>
+            )}
           </p>
+
           <Link
-            href={`/trajet/${trajet.tripId}`}
+            href={offre.href}
             className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-[10px] bg-accent px-4 text-sm font-bold text-white transition hover:bg-accent-profond"
           >
-            {places > 0 ? "Choisir mes sièges" : "Voir le plan"}
+            {offre.bookingMode === "SIEGE"
+              ? places > 0
+                ? "Choisir mes sièges"
+                : "Voir le plan"
+              : offre.bookingMode === "PLACES"
+                ? places > 0
+                  ? "Réserver une place"
+                  : "Voir le départ"
+                : "Voir le départ"}
           </Link>
+
+          {offre.bookingMode === "CONTACT" && (offre.companyPhone || offre.companyWhatsapp) && (
+            <div className="mt-2">
+              <ContactAgence
+                telephone={offre.companyPhone}
+                whatsapp={offre.companyWhatsapp}
+                messageWhatsapp={`Bonjour ${offre.compagnie}, je souhaite réserver une place sur le départ ${offre.origine} → ${offre.destination} de ${formatTime(offre.depart)}. (via Mobembo)`}
+                compact
+              />
+            </div>
+          )}
         </div>
       </div>
     </li>

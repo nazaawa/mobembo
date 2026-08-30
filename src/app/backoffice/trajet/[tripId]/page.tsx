@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { currentSession } from "@/lib/auth/session";
+import { companyAccess, hasModule } from "@/lib/domain/access";
+import { ModuleFerme } from "@/components/module-ferme";
 import { getDb } from "@/lib/db";
 import { tripDetail, getSeatMap } from "@/lib/domain/repo";
 import { listTripSeats, seatAvailability } from "@/lib/domain/seats";
@@ -15,6 +17,8 @@ export const dynamic = "force-dynamic";
 export default async function FicheTrajet(props: PageProps<"/backoffice/trajet/[tripId]">) {
   const { tripId } = await props.params;
   const session = await currentSession();
+  const acces = await companyAccess(session!.companyId!);
+  if (!hasModule(acces, "ERP")) return <ModuleFerme module="ERP" />;
 
   let trip;
   try {

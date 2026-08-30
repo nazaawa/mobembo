@@ -120,6 +120,18 @@ Les actions principales sont rouges, pleines et fermes. Le survol assombrit la c
 
 Les cartes utilisent un fond blanc, un rayon de 14 px et des séparations internes plutôt qu'une collection de mini-cartes décoratives.
 
+### Tableau des départs
+
+Quand des éléments se comparent sur les mêmes critères — axes couverts, agences référencées, horaires d'une ligne — ils se lisent en lignes et colonnes, jamais en grille de cartes. En-tête bleu nuit à petites capitales espacées, lignes blanches séparées d'un filet, chiffres en chasse tabulaire alignés à droite. C'est la forme d'un tableau de gare, et elle rend la comparaison possible d'un seul regard. Sous 768 px, la ligne s'empile mais garde son ordre de lecture.
+
+### Étiquette de fraîcheur
+
+Toute information publiée par une agence porte, en gris doux et en 12 px, la date de sa dernière mise à jour, précédée d'une horloge fine. Elle n'apparaît jamais sur une donnée calculée en direct — une disponibilité de siège n'a pas de date, elle a un état.
+
+### Badge de mode de réservation
+
+Trois formes, jamais interchangeables : vert pour un départ vendu en ligne avec siège et paiement, rouge accent pour une place réservable sans paiement, gris neutre pour un horaire publié où l'on appelle l'agence. Ce badge précède toujours l'action, parce qu'il change ce que le bouton fait vraiment.
+
 ### Inputs / Fields
 
 Les champs sont sur fond gris nuage, avec un libellé au-dessus et une icône fonctionnelle. Le focus blanchit le fond et prend une bordure rouge.
@@ -132,6 +144,8 @@ Le header blanc reste compact et lisible. La marque est à gauche, les destinati
 
 ### Do:
 
+- **Do** dire le mode de réservation avant le bouton, jamais après.
+- **Do** dater toute information publiée par une agence.
 - **Do** réserver le rouge aux CTA, focus et alertes.
 - **Do** montrer des bus, gares et parcours réels plutôt que des illustrations génériques.
 - **Do** maintenir la recherche comme action dominante du premier écran.
@@ -139,6 +153,8 @@ Le header blanc reste compact et lisible. La marque est à gauche, les destinati
 
 ### Don't:
 
+- **Don't** présenter un horaire simplement référencé comme un départ réservable en ligne.
+- **Don't** transformer une liste comparable en grille de cartes.
 - **Don't** ajouter de verre décoratif, de texte en dégradé ou de halos néon.
 - **Don't** inventer des prix, classements, témoignages ou chiffres de confiance.
 - **Don't** réduire les cibles tactiles sous 44 px.

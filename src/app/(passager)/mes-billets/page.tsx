@@ -5,6 +5,14 @@ import { activeCredits } from "@/lib/domain/cancellation";
 import { expireStaleBookings } from "@/lib/domain/bookings";
 import { formatDateTime } from "@/lib/core/time";
 import { TICKET_STATUS_LABELS, type TicketStatus } from "@/lib/domain/types";
+import {
+  TICKET_STATUS_LABELS as TICKET_RESERVATION_LABELS,
+  expirePastTickets,
+  passengerTickets,
+  type ScheduleTicketStatus,
+} from "@/lib/domain/reservation-payments";
+import { formatDay } from "@/lib/core/time";
+import { formatMoney } from "@/lib/core/money";
 import { Card, Badge, Empty, Money, Table } from "@/components/ui";
 import { ConnexionPassager } from "./connexion";
 
@@ -50,6 +58,14 @@ export default async function MesBillets() {
   // une réservation morte reste affichée comme « en attente » indéfiniment
   // (§3.1 : pas de tâche de fond, le nettoyage se fait au prochain accès).
   await expireStaleBookings();
+  // §14.4 : « à venir, utilisés, annulés, expirés ». Le passage à EXPIRE se
+  // fait à la lecture, comme le reste du produit (§3.1 : aucune tâche de fond).
+  await expirePastTickets();
+
+  // Billets de phase 3 : payés en ligne sur une réservation, sans siège.
+  const billetsReservation = await passengerTickets(session.phone);
+  const parEtat = (etats: ScheduleTicketStatus[]) =>
+    billetsReservation.filter((billet) => etats.includes(billet.status));
 
   const billets = await getDb()
     .prepare<LigneBillet>(
@@ -81,9 +97,73 @@ export default async function MesBillets() {
 
   const avoirs = await activeCredits(session.phone);
 
+  const groupes: Array<{ titre: string; etats: ScheduleTicketStatus[] }> = [
+    { titre: "À venir", etats: ["VALIDE"] },
+    { titre: "Utilisés", etats: ["UTILISE"] },
+    { titre: "Annulés", etats: ["ANNULE"] },
+    { titre: "Expirés", etats: ["EXPIRE"] },
+  ];
+
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold tracking-tight">Mes billets</h1>
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight">Mes billets</h1>
+        <p className="mt-1 text-sm text-texte-doux">
+          Billets payés en ligne au {session.phone}.{" "}
+          <Link href="/mes-reservations" className="font-semibold text-accent hover:underline">
+            Vos réservations à régler sur place sont ici
+          </Link>
+          .
+        </p>
+      </div>
+
+      {billetsReservation.length > 0 &&
+        groupes.map(({ titre, etats }) => {
+          const lot = parEtat(etats);
+          if (lot.length === 0) return null;
+          return (
+            <Card key={titre} title={titre} subtitle={`${lot.length} billet${lot.length > 1 ? "s" : ""}`}>
+              <ul className="divide-y divide-bordure">
+                {lot.map((billet) => (
+                  <li key={billet.id} className="grid gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div className="min-w-0">
+                      <Link
+                        href={`/billet-reservation/${billet.id}`}
+                        className="font-semibold text-navy hover:text-accent"
+                      >
+                        {billet.reservation.origin_city} → {billet.reservation.destination_city}
+                      </Link>
+                      <p className="mt-0.5 text-xs text-texte-doux">
+                        {billet.reservation.compagnie} · {formatDay(billet.reservation.travel_date)}{" "}
+                        · {billet.reservation.departure_time} · {billet.seats} place
+                        {billet.seats > 1 ? "s" : ""}
+                      </p>
+                      <p className="mt-0.5 font-mono text-xs text-texte-doux">{billet.ticket_code}</p>
+                    </div>
+                    <div className="flex items-center gap-3 sm:justify-end">
+                      <span className="text-sm font-semibold tabular-nums text-navy">
+                        {formatMoney(billet.paid_amount, billet.paid_currency)}
+                      </span>
+                      <Badge
+                        tone={
+                          billet.status === "VALIDE"
+                            ? "succes"
+                            : billet.status === "UTILISE"
+                              ? "accent"
+                              : billet.status === "ANNULE"
+                                ? "alerte"
+                                : "neutre"
+                        }
+                      >
+                        {TICKET_RESERVATION_LABELS[billet.status]}
+                      </Badge>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          );
+        })}
 
       {reservationsEnAttente.length > 0 && (
         <Card
@@ -144,14 +224,14 @@ export default async function MesBillets() {
         </Card>
       )}
 
-      {billets.length === 0 ? (
+      {billets.length === 0 && billetsReservation.length === 0 ? (
         <Empty>
           Aucun billet à ce numéro.{" "}
           <Link href="/" className="text-accent hover:underline">
             Chercher un départ
           </Link>
         </Empty>
-      ) : (
+      ) : billets.length === 0 ? null : (
         <Card>
           <Table headers={["Trajet", "Départ", "Siège", "Code", "Statut", "Prix"]}>
             {billets.map((billet) => (

@@ -24,19 +24,22 @@ export default async function PassagerLayout({ children }: LayoutProps<"/">) {
           <div className="max-w-md">
             <p className="font-heading text-lg font-bold tracking-[-0.02em]">Mobembo</p>
             <p className="mt-3 text-sm leading-6 text-white/65">
-              Le prix affiché en ligne n&apos;est jamais supérieur au prix au guichet. Aucune commission n&apos;est ajoutée au passager.
+              Les horaires, tarifs et contacts sont publiés par les agences elles-mêmes et affichent leur date de mise à jour. Le référencement est gratuit, et aucune commission n&apos;est ajoutée au voyageur.
             </p>
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Votre voyage</p>
             <div className="mt-2 flex flex-col items-start text-sm text-white/75">
               <Link href="/" className="inline-flex min-h-11 items-center hover:text-white">Chercher un trajet</Link>
-              <Link href="/mes-billets" className="inline-flex min-h-11 items-center hover:text-white">Retrouver mes billets</Link>
+              <Link href="/agences" className="inline-flex min-h-11 items-center hover:text-white">Les agences référencées</Link>
+              <Link href="/mes-reservations" className="inline-flex min-h-11 items-center hover:text-white">Mes réservations</Link>
+              <Link href="/mes-billets" className="inline-flex min-h-11 items-center hover:text-white">Mes billets payés</Link>
             </div>
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Espaces professionnels</p>
             <div className="mt-2 flex flex-col items-start text-sm text-white/75">
+              <Link href="/partenaires/inscription" className="inline-flex min-h-11 items-center hover:text-white">Référencer une agence</Link>
               <Link href="/guichet" className="inline-flex min-h-11 items-center hover:text-white">Guichet</Link>
               <Link href="/backoffice" className="inline-flex min-h-11 items-center hover:text-white">Back-office</Link>
               <Link href="/controle" className="inline-flex min-h-11 items-center hover:text-white">Contrôleur</Link>

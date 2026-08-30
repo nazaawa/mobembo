@@ -43,6 +43,7 @@ function NavIcon({ name }: { name: string }) {
   if (name === "wallet") return <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 6h14a2 2 0 0 1 2 2v11H4a2 2 0 0 1-2-2V6a3 3 0 0 1 3-3h12"/><path d="M15 11h7v5h-7a2 2 0 0 1 0-5Z"/></svg>;
   if (name === "users") return <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M18 15a6 6 0 0 1 4 6"/></svg>;
   if (name === "settings") return <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>;
+  if (name === "pin") return <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>;
   if (name === "journal") return <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 3h14v18H5a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z"/><path d="M5 3v18M9 8h6M9 12h6"/></svg>;
   return <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>;
 }

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
+import { companyAccess, hasModule } from "@/lib/domain/access";
+import { ModuleFerme } from "@/components/module-ferme";
 import { formatDateTime } from "@/lib/core/time";
 import { Card, Badge, Empty, Why } from "@/components/ui";
 import { ManifestesEnCache } from "./cache";
@@ -37,6 +39,17 @@ export default async function AccueilControle() {
     redirect("/guichet/connexion");
   }
   if (!session.agencyId) return <Empty>Aucune agence n&apos;est rattachée à ce rôle.</Empty>;
+  const acces = await companyAccess(session.companyId!);
+  if (!hasModule(acces, "CONTROLE")) {
+    return (
+      <ModuleFerme
+        module="CONTROLE"
+        peutDemander={false}
+        retourHref="/guichet/connexion"
+        retourLabel="Changer de rôle"
+      />
+    );
+  }
 
   // Les horodatages sont des chaînes ISO 8601 : la fenêtre "-12h / +24h" est
   // calculée côté JS et liée en paramètre plutôt qu'avec datetime('now', …),

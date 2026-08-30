@@ -1,4 +1,7 @@
+import { redirect } from "next/navigation";
 import { currentSession } from "@/lib/auth/session";
+import { companyAccess, hasModule } from "@/lib/domain/access";
+import { ModuleFerme } from "@/components/module-ferme";
 import { getDb } from "@/lib/db";
 import { seatGrid, LAYOUT_PRESETS } from "@/lib/domain/seat-map";
 import { detectSequenceGaps } from "@/lib/domain/tickets";
@@ -12,6 +15,12 @@ export const dynamic = "force-dynamic";
 /** §2.1 Référentiel : compagnies, agences, bus, plans de sièges, lignes. */
 export default async function Referentiel() {
   const session = await currentSession();
+  // Le layout et la page rendent en parallèle : le `redirect()` du layout
+  // n'empêche pas cette fonction de s'exécuter. Sans cette garde, une session
+  // expirée produit une exception au lieu d'une redirection propre.
+  if (!session?.companyId) redirect("/guichet/connexion");
+  const acces = await companyAccess(session!.companyId!);
+  if (!hasModule(acces, "ERP")) return <ModuleFerme module="ERP" />;
   const db = getDb();
   const companyId = session!.companyId!;
   const gestionnaire = ["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session!.activeRole);

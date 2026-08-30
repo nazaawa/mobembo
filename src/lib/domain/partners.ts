@@ -6,6 +6,7 @@ import { newId } from "@/lib/core/ids";
 import { errors } from "@/lib/core/errors";
 import { nowIso } from "@/lib/core/time";
 import { audit } from "./audit";
+import { uniqueSlug } from "./directory";
 import { DEFAULT_POLICY, type PartnerApplicationType } from "./types";
 
 export interface PartnerApplicationRow {
@@ -119,13 +120,29 @@ export async function reviewPartnerApplication(input: {
     const agencyId = newId("agc");
     const userId = newId("usr");
     const now = nowIso();
+    // §4.4 : la fiche publique existe dès l'approbation. Le slug est posé ici
+    // plutôt qu'à la première édition du profil, pour que l'URL de l'agence
+    // soit stable dès son premier horaire publié.
+    const slug = await uniqueSlug(application.company_name, companyId, db);
     await db
       .prepare(
         `INSERT INTO companies
-         (id, name, status, kind, commission_rate, currency_rate_usd_cdf, qr_secret, policy_json, created_at)
-         VALUES (?, ?, 'ACTIVE', ?, 0.06, 2800, ?, ?, ?)`,
+         (id, name, status, kind, slug, phone, head_office_city, commission_rate,
+          currency_rate_usd_cdf, qr_secret, policy_json, listed, profile_updated_at, created_at)
+         VALUES (?, ?, 'ACTIVE', ?, ?, ?, ?, 0.06, 2800, ?, ?, 1, ?, ?)`,
       )
-      .run(companyId, application.company_name, application.application_type, randomBytes(32).toString("hex"), JSON.stringify(DEFAULT_POLICY), now);
+      .run(
+        companyId,
+        application.company_name,
+        application.application_type,
+        slug,
+        application.phone,
+        application.city,
+        randomBytes(32).toString("hex"),
+        JSON.stringify(DEFAULT_POLICY),
+        now,
+        now,
+      );
     await db
       .prepare(
         `INSERT INTO agencies

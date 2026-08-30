@@ -538,6 +538,163 @@ CREATE TABLE IF NOT EXISTS sync_log (
   server_time   VARCHAR(32) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------------
+-- PHASE 1 & 2 — référencement léger et réservation sans paiement
+--
+-- Note fonctionnelle mobile, §3.1 : « Les agences peuvent continuer à utiliser
+-- leur fonctionnement actuel. » Une agence référencée doit pouvoir publier
+-- « Kinshasa → Matadi, 08:00, tous les jours, 25 $ » sans plan de sièges, sans
+-- bus immatriculé, sans paiement en ligne et sans quitter son organisation
+-- actuelle. Les tables ci-dessous portent cette offre légère, à côté de la
+-- table trips, qui reste le modèle complet des phases 3 à 5.
+-- ---------------------------------------------------------------------------
+
+-- §5.4 « Gestion des trajets » : le service régulier tel que l'agence
+-- l'annonce. Aucune contrainte de flotte, aucun siège matérialisé.
+CREATE TABLE IF NOT EXISTS schedules (
+  id               VARCHAR(32) PRIMARY KEY,
+  company_id       VARCHAR(32) NOT NULL,
+  agency_id        VARCHAR(32),
+  origin_city      VARCHAR(80) NOT NULL,
+  destination_city VARCHAR(80) NOT NULL,
+  -- Heure locale de Kinshasa au format "HH:MM". Un service régulier n'a pas
+  -- de date : la date naît de la recherche du voyageur.
+  departure_time   VARCHAR(5) NOT NULL,
+  -- Jours de circulation, ISO 8601 (1 = lundi … 7 = dimanche), ex. "1,3,5".
+  days_of_week     VARCHAR(20) NOT NULL DEFAULT '1,2,3,4,5,6,7',
+  -- §4.3 « prix indicatif » : centimes, facultatifs, une devise suffit.
+  price_usd        INT,
+  price_cdf        INT,
+  boarding_point   TEXT,
+  boarding_gps     VARCHAR(60),
+  vehicle_type     VARCHAR(30) NOT NULL DEFAULT 'BUS',
+  vehicle_label    TEXT,
+  duration_est_min INT,
+  notes            TEXT,
+  -- §11.1 Phase 2 : l'agence décide si elle ouvre des places sur Mobembo, et
+  -- combien. Zéro par défaut — le référencement seul n'engage à rien.
+  booking_enabled  TINYINT NOT NULL DEFAULT 0,
+  online_quota     INT NOT NULL DEFAULT 0,
+  status           VARCHAR(30) NOT NULL DEFAULT 'PUBLIE', -- PUBLIE|SUSPENDU|ARCHIVE
+  -- §6 : « Mobembo peut désactiver temporairement une information
+  -- manifestement incorrecte. » La suspension porte son motif.
+  suspended_reason TEXT,
+  suspended_by     VARCHAR(32),
+  created_by       VARCHAR(32),
+  created_at       VARCHAR(32) NOT NULL,
+  -- §6 : « Les informations visibles doivent afficher leur dernière date de
+  -- mise à jour. » Cette colonne est cette date, et elle est publique.
+  updated_at       VARCHAR(32) NOT NULL,
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+  FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- §10.2 « Réserver une place » : nom, téléphone, nombre de places. Pas de
+-- siège, pas de paiement, pas de billet. Le quota du jour est la seule
+-- ressource disputée (§12 : « une place vendue est retirée du quota »).
+CREATE TABLE IF NOT EXISTS schedule_bookings (
+  id              VARCHAR(32) PRIMARY KEY,
+  reference       VARCHAR(20) NOT NULL UNIQUE,
+  schedule_id     VARCHAR(32) NOT NULL,
+  company_id      VARCHAR(32) NOT NULL,
+  -- Jour calendaire de Kinshasa "AAAA-MM-JJ" : le quota se compte par date.
+  travel_date     VARCHAR(10) NOT NULL,
+  -- Instant de départ recalculé à la réservation, pour trier et expirer sans
+  -- refaire le calcul heure locale → UTC à chaque lecture.
+  departure_at    VARCHAR(32) NOT NULL,
+  passenger_name  TEXT NOT NULL,
+  passenger_phone VARCHAR(20) NOT NULL,
+  seats           INT NOT NULL DEFAULT 1,
+  note            TEXT,
+  -- CONFIRMEE | ANNULEE | TERMINEE — pas d'attente de paiement en phase 2.
+  status          VARCHAR(30) NOT NULL DEFAULT 'CONFIRMEE',
+  cancelled_by    VARCHAR(30),        -- VOYAGEUR | AGENCE
+  cancel_reason   TEXT,
+  -- Prix figé à la réservation : l'agence peut changer son tarif ensuite.
+  price_usd       INT,
+  price_cdf       INT,
+  created_at      VARCHAR(32) NOT NULL,
+  updated_at      VARCHAR(32) NOT NULL,
+  cancelled_at    VARCHAR(32),
+  FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE,
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- §14.1 PHASE 3 — paiement d'une réservation, via IdoloPay.
+--
+-- Table distincte de la table payments : celle-ci règle une réservation de
+-- place (schedule_bookings), pas une vente de sièges. Les deux économies
+-- diffèrent —
+-- 10 % de commission ici (§17), 6 à 8 % sur la billetterie complète — et
+-- mélanger les deux rendrait tout reversement ambigu.
+CREATE TABLE IF NOT EXISTS schedule_payments (
+  id                VARCHAR(32) PRIMARY KEY,
+  reservation_id    VARCHAR(32) NOT NULL,
+  company_id        VARCHAR(32) NOT NULL,
+  provider          VARCHAR(30) NOT NULL,
+  provider_ref      VARCHAR(80),
+  idempotency_key   VARCHAR(80) NOT NULL,
+  payer_phone       VARCHAR(20) NOT NULL,
+  -- Ce que le voyageur paie réellement (centimes). §14.1 : prix x places.
+  amount            INT NOT NULL,
+  -- §14.1 « éventuels frais » : zéro chez Mobembo, la commission est prise
+  -- côté agence. La colonne existe pour que le montant affiché reste exact
+  -- le jour où un opérateur en facturerait.
+  fee_amount        INT NOT NULL DEFAULT 0,
+  -- §17 : la part Mobembo, retenue sur le reversement à l'agence.
+  commission_amount INT NOT NULL DEFAULT 0,
+  currency          VARCHAR(10) NOT NULL,
+  fx_rate           DOUBLE,
+  fx_rate_at        VARCHAR(32),
+  -- INITIE | CONFIRME | ECHOUE | INDETERMINE | A_REMBOURSER | REMBOURSE
+  status            VARCHAR(30) NOT NULL DEFAULT 'INITIE',
+  raw_response      TEXT,
+  polls             INT NOT NULL DEFAULT 0,
+  last_polled_at    VARCHAR(32),
+  created_at        VARCHAR(32) NOT NULL,
+  resolved_at       VARCHAR(32),
+  UNIQUE (idempotency_key),
+  FOREIGN KEY (reservation_id) REFERENCES schedule_bookings(id) ON DELETE CASCADE,
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- §14.3 Billet numérique. §16 : « Chaque QR code doit correspondre à un seul
+-- billet » — d'où l'unicité sur la réservation et sur le code.
+--
+-- Le billet ne porte pas de siège : §14.3 ne l'y met pas, et la sélection de
+-- place appartient à la phase 4 (§19.2). Une agence de phase 3 n'a pas de plan
+-- de sièges, et son billet vaut pour N places sur un départ.
+CREATE TABLE IF NOT EXISTS schedule_tickets (
+  id             VARCHAR(32) PRIMARY KEY,
+  reservation_id VARCHAR(32) NOT NULL UNIQUE,
+  company_id     VARCHAR(32) NOT NULL,
+  ticket_code    VARCHAR(20) NOT NULL UNIQUE,
+  qr_signature   TEXT NOT NULL,
+  seats          INT NOT NULL DEFAULT 1,
+  -- VALIDE | UTILISE | ANNULE | EXPIRE  (§14.4 : à venir, utilisés, annulés, expirés)
+  status         VARCHAR(30) NOT NULL DEFAULT 'VALIDE',
+  paid_amount    INT NOT NULL,
+  paid_currency  VARCHAR(10) NOT NULL,
+  payment_id     VARCHAR(32),
+  issued_at      VARCHAR(32) NOT NULL,
+  used_at        VARCHAR(32),
+  updated_at     VARCHAR(32) NOT NULL,
+  FOREIGN KEY (reservation_id) REFERENCES schedule_bookings(id) ON DELETE CASCADE,
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+  FOREIGN KEY (payment_id) REFERENCES schedule_payments(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- §7 « Indicateurs Phase 1 » : nombre de recherches, trajets les plus
+-- recherchés. Une ligne par recherche, sans identifiant de personne.
+CREATE TABLE IF NOT EXISTS search_events (
+  id               VARCHAR(32) PRIMARY KEY,
+  origin_city      VARCHAR(80) NOT NULL,
+  destination_city VARCHAR(80) NOT NULL,
+  travel_date      VARCHAR(10) NOT NULL,
+  results_count    INT NOT NULL DEFAULT 0,
+  created_at       VARCHAR(32) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Migrations additives (colonnes ajoutées après la création initiale des
 -- tables). Sur une base neuve, CREATE TABLE plus haut a déjà posé ces
 -- colonnes : l'ALTER échoue avec "Duplicate column name" (1060), ignoré par
@@ -545,6 +702,52 @@ CREATE TABLE IF NOT EXISTS sync_log (
 ALTER TABLE buses ADD COLUMN vehicle_type VARCHAR(30) NOT NULL DEFAULT 'BUS';
 ALTER TABLE partner_applications ADD COLUMN application_type VARCHAR(30) NOT NULL DEFAULT 'COMPAGNIE';
 ALTER TABLE companies ADD COLUMN kind VARCHAR(30) NOT NULL DEFAULT 'COMPAGNIE';
+
+-- §4.4 « Fiche agence » : la vitrine publique d'une agence référencée. Ces
+-- colonnes sont vides pour une compagnie créée avant la phase 1. La fiche
+-- s'affiche alors avec ce qu'elle a, sans jamais inventer un contact.
+ALTER TABLE companies ADD COLUMN slug VARCHAR(90);
+ALTER TABLE companies ADD COLUMN description TEXT;
+ALTER TABLE companies ADD COLUMN phone VARCHAR(20);
+ALTER TABLE companies ADD COLUMN whatsapp VARCHAR(20);
+ALTER TABLE companies ADD COLUMN email VARCHAR(160);
+ALTER TABLE companies ADD COLUMN head_office_city VARCHAR(80);
+ALTER TABLE companies ADD COLUMN address TEXT;
+ALTER TABLE companies ADD COLUMN services TEXT;
+-- §6 : « Le référencement des agences est gratuit. » Une agence est visible
+-- dans l'annuaire dès sa création. Mobembo peut la retirer, pas l'inverse.
+ALTER TABLE companies ADD COLUMN listed TINYINT NOT NULL DEFAULT 1;
+ALTER TABLE companies ADD COLUMN profile_updated_at VARCHAR(32);
+
+-- §29 : « Les fonctions affichées dépendent du rôle et de la phase activée pour
+-- l'agence. » Les modules ouverts par l'équipe Mobembo, en JSON (voir
+-- src/lib/domain/modules.ts). NULL signifie « jamais renseigné » et se
+-- rattrape par les deux UPDATE de reprise plus bas.
+ALTER TABLE companies ADD COLUMN modules TEXT;
+-- Interrupteur du directeur : replier la vue sur l'essentiel sans rien perdre.
+ALTER TABLE companies ADD COLUMN advanced_view TINYINT NOT NULL DEFAULT 1;
+
+-- §17 : « 10 % sur les billets payés via Mobembo / IdoloPay. » Distinct de
+-- commission_rate, qui porte la billetterie complète à 6-8 % (§2.10).
+ALTER TABLE companies ADD COLUMN online_commission_rate DOUBLE NOT NULL DEFAULT 0.10;
+
+-- §14.2 : une réservation payée en ligne n'a pas le même état qu'une
+-- réservation à régler à l'agence. SUR_PLACE reste le défaut — la phase 2
+-- continue de fonctionner à l'identique chez les agences sans phase 3.
+ALTER TABLE schedule_bookings ADD COLUMN payment_status VARCHAR(30) NOT NULL DEFAULT 'SUR_PLACE';
+
+-- Reprise de l'existant, idempotente : après le premier passage, plus aucune
+-- ligne n'a modules IS NULL. Une compagnie qui possède déjà des véhicules
+-- exploite la billetterie complète — lui retirer ses écrans à la migration
+-- casserait son activité du jour. Les autres démarrent sur la phase 2.
+UPDATE companies SET modules = '["RESERVATION","BILLETTERIE","ERP","CONTROLE"]'
+ WHERE modules IS NULL AND EXISTS (SELECT 1 FROM buses b WHERE b.company_id = companies.id);
+UPDATE companies SET modules = '["RESERVATION"]' WHERE modules IS NULL;
+-- Renommage du module de phase 3 après relecture de la note : « billetterie »
+-- couvrait à tort la planification et les plans de sièges, qui relèvent de
+-- l'ERP (§19.2, §19.4). La phase 3 est le paiement et le billet numérique.
+UPDATE companies SET modules = REPLACE(modules, '"BILLETTERIE"', '"PAIEMENT"')
+ WHERE modules LIKE '%BILLETTERIE%';
 
 -- Index critiques (§3.5) --------------------------------------------------
 CREATE INDEX idx_trip_seats_trip_status ON trip_seats(trip_id, status);
@@ -559,4 +762,17 @@ CREATE INDEX idx_audit_created ON audit_log(created_at);
 CREATE INDEX idx_resale_trip_status ON resale_listings(trip_id, status);
 CREATE INDEX idx_boarding_ticket ON boarding_scans(ticket_id);
 CREATE INDEX idx_credits_phone ON credits(passenger_phone, status);
+-- Phase 1 & 2
+CREATE UNIQUE INDEX idx_companies_slug ON companies(slug);
+CREATE INDEX idx_schedules_axe ON schedules(origin_city, destination_city, status);
+CREATE INDEX idx_schedules_company ON schedules(company_id, status);
+CREATE INDEX idx_schedule_bookings_phone ON schedule_bookings(passenger_phone, status);
+CREATE INDEX idx_schedule_bookings_jour ON schedule_bookings(schedule_id, travel_date, status);
+CREATE INDEX idx_schedule_bookings_company ON schedule_bookings(company_id, departure_at);
+CREATE INDEX idx_search_events_axe ON search_events(origin_city, destination_city, created_at);
+-- Phase 3
+CREATE INDEX idx_schedule_payments_reservation ON schedule_payments(reservation_id, status);
+CREATE INDEX idx_schedule_payments_ref ON schedule_payments(provider_ref);
+CREATE INDEX idx_schedule_payments_company ON schedule_payments(company_id, status, resolved_at);
+CREATE INDEX idx_schedule_tickets_company ON schedule_tickets(company_id, status);
 `;

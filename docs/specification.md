@@ -4,6 +4,77 @@ Correspondance entre le cahier des charges v1.0 et l'implémentation.
 
 ---
 
+## 0. Phases 1 et 2 — offre légère (note fonctionnelle mobile)
+
+Le cahier des charges v1.0 décrit la billetterie complète. La note
+fonctionnelle mobile la précède de deux phases, dont le principe est qu'une
+agence n'a **rien** à changer pour être utile aux voyageurs. Ces deux phases
+vivent dans des tables distinctes, à côté du modèle complet, jamais dedans :
+
+| Note fonctionnelle | Implémentation |
+| ------------------ | -------------- |
+| §4.1-4.3 Accueil, recherche, résultats | `domain/offers.ts` — `searchOffers`, `coveredAxes` |
+| §4.4 Fiche agence | `domain/directory.ts` ; `/agences`, `/agences/[slug]` |
+| §4.5 Fiche trajet, appel, WhatsApp, itinéraire | `/horaire/[scheduleId]` ; `core/links.ts` |
+| §5.1-5.3 Compte et profil agence | `domain/directory.ts` — `updateCompanyProfile` ; `/backoffice/vitrine` |
+| §5.4 Gestion des trajets | `domain/schedules.ts` — `createSchedule`, `updateSchedule` |
+| §5.5 Mise à jour simple | `domain/schedules.ts` — `quickUpdateSchedule` ; édition en ligne du tableau |
+| §6 Date de dernière mise à jour | `schedules.updated_at`, `companies.profile_updated_at`, `<MiseAJour>` |
+| §6 Désactivation d'une information | `setScheduleStatus`, `setCompanyListed` |
+| §7 Indicateurs | `search_events`, `domain/offers.ts` — `platformCoverage` ; `/administration` |
+| §10.1-10.2 Disponibilité et réservation | `domain/reservations.ts` — `createReservation` |
+| §10.4 Mes réservations | `passengerReservations` ; `/mes-reservations` |
+| §11.1 Mise à disposition de places | `schedules.booking_enabled`, `schedules.online_quota` |
+| §11.2 Suivi des réservations | `companyReservations` ; `/backoffice/reservations` |
+| §12 Quota, retrait automatique | verrou `FOR UPDATE` sur `schedules` dans `createReservation` |
+| §14.1 Paiement d'une réservation | `domain/reservation-payments.ts` — `paymentQuote`, `initiateReservationPayment` ; `/paiement/[reservationId]` |
+| §14.2-14.3 Confirmation et billet numérique | `settleReservationPayment` ; `buildReservationQr` (format `MBO2`, sans siège) ; `/billet-reservation/[ticketId]` |
+| §14.4 Mes billets (à venir / utilisés / annulés / expirés) | `passengerTickets`, `expirePastTickets` ; `/mes-billets` |
+| §14.5 Partage du billet | `navigator.share`, copie, impression thermique |
+| §15 Vue agence des billets | `ticketingSummary`, `companyTickets` ; `/backoffice/billets` |
+| §16 Règles du billet | billet émis dans la transaction du paiement CONFIRME, unicité `schedule_tickets.reservation_id` |
+| §17 Commission 10 % | `companies.online_commission_rate`, figée dans `schedule_payments.commission_amount` |
+| §29 Fonctions affichées selon la phase activée | `domain/modules.ts`, `domain/access.ts` ; navigation de `app/backoffice/layout.tsx` |
+| §33 Validation entre les phases | ouverture manuelle par le `SUPER_ADMIN` dans `/administration`, tracée `MODULES_AGENCE` |
+
+**Ce que la phase 2 ne fait pas** : aucun paiement, aucun siège numéroté, aucun
+billet, aucun QR. Une réservation est une place tenue sur un quota, réglée à
+l'agence. Cette limite est dite explicitement à chaque écran, parce qu'un
+voyageur qui croit avoir payé se présente sans argent au départ.
+
+**Frontière entre les deux modèles.** `searchOffers` est le seul endroit qui
+les réunit. En aval, `bookingMode` (`SIEGE` | `PLACES` | `CONTACT`) porte
+l'information : aucune interface ne teste `kind` pour décider quoi proposer.
+
+**Deux formats de QR, volontairement distincts.** `MBO1|ticketId|tripId|seat`
+porte un billet à siège (phases 4+) ; `MBO2|ticketId|scheduleId|date` porte un
+billet de réservation (phase 3). Un contrôleur qui scanne sait donc de quoi il
+s'agit avant de vérifier la signature, au lieu de le deviner — et le
+vérificateur de l'un rejette l'autre sur le format, jamais sur la signature.
+
+**Ce que la phase 3 ne change pas.** Un paiement échoué ne fait perdre ni la
+place ni la réservation : la phase 2 continue, le voyageur règle à l'agence.
+C'est la différence de fond avec la billetterie à sièges, où l'échec libère le
+siège verrouillé. §16 impose seulement qu'aucun billet valide n'existe sans
+paiement confirmé.
+
+**Remboursements.** §16 les renvoie à des règles « définies par l'agence et
+Mobembo » qui n'existent pas encore : le système n'en invente aucune. Annuler un
+billet payé l'invalide, met le paiement en `A_REMBOURSER` et le fait remonter à
+l'agence, qui rembourse par son canal puis le déclare. Une file d'attente
+visible vaut mieux qu'un décaissement automatique sur une règle non écrite.
+
+**Phases ouvertes par agence.** `companies.modules` porte ce que Mobembo a
+ouvert ; `companies.advanced_view` porte ce que le directeur affiche parmi
+cela. `companyAccess()` combine les deux en `visible`, seule valeur que consulte
+la navigation. `requireModule()` protège les écrans concernés — c'est une garde
+contre l'égarement, pas une frontière d'autorisation : celle-ci reste portée par
+les rôles (§3.3), et un module fermé n'expose donc jamais la donnée d'une autre
+agence. Fermer un module ne détruit rien : les réservations, billets et ventes
+déjà pris restent valides et lisibles par leurs autres chemins.
+
+---
+
 ## 1. Principe directeur (§1.2)
 
 > La base de données est la seule source de vérité sur l'état d'un siège.

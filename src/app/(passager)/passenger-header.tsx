@@ -6,10 +6,9 @@ import { useState } from "react";
 import { MobemboLogo } from "@/components/brand";
 
 const navigation = [
-  { href: "/#recherche", label: "Réserver" },
-  { href: "/#axes-disponibles", label: "Destinations" },
+  { href: "/#recherche", label: "Chercher un départ" },
+  { href: "/agences", label: "Les agences" },
   { href: "/#agences-partenaires", label: "Pour les agences" },
-  { href: "/#comment-ca-marche", label: "Comment ça marche" },
 ] as const;
 
 export function PassengerHeader({ authenticated }: { authenticated: boolean }) {
@@ -33,12 +32,12 @@ export function PassengerHeader({ authenticated }: { authenticated: boolean }) {
 
         <div className="flex items-center justify-end gap-2">
           <Link
-            href="/mes-billets"
-            aria-current={pathname === "/mes-billets" ? "page" : undefined}
-            className={`inline-flex h-11 min-h-11 items-center justify-center gap-2 rounded-[10px] border px-3 text-sm font-semibold transition sm:px-4 ${pathname === "/mes-billets" ? "border-accent bg-accent-doux text-accent" : "border-bordure text-navy hover:border-accent hover:text-accent"}`}
+            href="/mes-reservations"
+            aria-current={pathname.startsWith("/mes-") ? "page" : undefined}
+            className={`inline-flex h-11 min-h-11 items-center justify-center gap-2 rounded-[10px] border px-3 text-sm font-semibold transition sm:px-4 ${pathname.startsWith("/mes-") ? "border-accent bg-accent-doux text-accent" : "border-bordure text-navy hover:border-accent hover:text-accent"}`}
           >
             <TicketIcon />
-            <span className="hidden sm:inline">Mes billets</span>
+            <span className="hidden sm:inline">Mes réservations</span>
           </Link>
           <Link
             href="/profil"
@@ -69,6 +68,9 @@ export function PassengerHeader({ authenticated }: { authenticated: boolean }) {
                 {item.label}
               </Link>
             ))}
+            <Link href="/mes-billets" onClick={() => setOpen(false)} className="inline-flex min-h-11 items-center rounded-[10px] px-3 text-sm font-semibold text-navy hover:bg-surface-alt">
+              Mes billets payés
+            </Link>
             <Link href="/profil" onClick={() => setOpen(false)} className="mt-2 inline-flex min-h-11 items-center justify-center rounded-[10px] bg-accent px-4 text-sm font-bold text-white">
               {authenticated ? "Mon profil" : "Se connecter"}
             </Link>

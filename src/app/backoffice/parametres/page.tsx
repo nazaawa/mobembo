@@ -5,23 +5,33 @@ import { companyPolicy, getCompany } from "@/lib/domain/repo";
 import { LIABILITY_GRID } from "@/lib/domain/cancellation";
 import { formatDateTime } from "@/lib/core/time";
 import { DEFAULT_POLICY } from "@/lib/domain/types";
+import { companyAccess, hasModule } from "@/lib/domain/access";
 import { Card, Badge, Table, Why } from "@/components/ui";
 import { FormulairePolitique } from "./formulaire";
+import { PanneauModules } from "./modules";
 
 export const dynamic = "force-dynamic";
 
 /**
- * §2.9 : « Grille paramétrable. Chaque seuil — délais, pourcentages, durée de
- * validité des avoirs — est configurable par compagnie, avec la grille
- * pré-remplie. »
+ * Paramètres du directeur.
+ *
+ * En tête, les phases : ce que Mobembo a ouvert pour l'agence, et
+ * l'interrupteur qui décide de l'afficher ou non (§29). Le reste — grilles de
+ * renoncement et de responsabilité (§2.9), arbitrages de paiement — n'a de sens
+ * que si l'agence vend en ligne, et ne s'affiche donc que dans ce cas.
  */
 export default async function Parametres() {
   const session = await currentSession();
   if (!session || !["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session.activeRole)) redirect("/backoffice");
   const company = await getCompany(session!.companyId!);
   const politique = companyPolicy(company);
+  const acces = await companyAccess(session!.companyId!);
+  const vendEnLigne = hasModule(acces, "ERP");
+  // Jamais de numéro inventé : l'assistance n'apparaît que si elle est
+  // configurée pour ce déploiement.
+  const assistance = process.env.MOBEMBO_SUPPORT_PHONE ?? null;
 
-  const indetermines = (await getDb()
+  const indetermines = !vendEnLigne ? [] : (await getDb()
     .prepare(
       `SELECT p.id, p.provider, p.amount, p.currency, p.payer_phone, p.created_at,
               b.buyer_name
@@ -45,12 +55,31 @@ export default async function Parametres() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Paramètres — {company.name}</h1>
         <p className="text-sm text-texte-doux">
-          Commission {(company.commission_rate * 100).toFixed(1)} % · taux{" "}
-          {company.currency_rate_usd_cdf} CDF/USD
-          {company.currency_rate_at && ` (daté du ${formatDateTime(company.currency_rate_at)})`}
+          {vendEnLigne ? (
+            <>
+              Commission {(company.commission_rate * 100).toFixed(1)} % · taux{" "}
+              {company.currency_rate_usd_cdf} CDF/USD
+              {company.currency_rate_at && ` (daté du ${formatDateTime(company.currency_rate_at)})`}
+            </>
+          ) : (
+            "Ce que votre agence utilise de Mobembo, et ce qu'elle affiche."
+          )}
         </p>
       </div>
 
+      <Card
+        title="Phases et affichage"
+        subtitle="Mobembo ouvre les phases ; vous choisissez celles que votre équipe voit."
+      >
+        <PanneauModules
+          modules={acces.modules}
+          vueComplete={acces.advancedView}
+          telephoneMobembo={assistance}
+        />
+      </Card>
+
+      {vendEnLigne && (
+      <>
       <Card
         title="Grille de renoncement"
         subtitle="Les avoirs et remboursements sortent de la poche de la compagnie."
@@ -107,6 +136,8 @@ export default async function Parametres() {
           </Why>
         </div>
       </Card>
+      </>
+      )}
 
       {indetermines.length > 0 && (
         <Card

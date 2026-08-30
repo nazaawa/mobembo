@@ -346,6 +346,8 @@ export interface SearchResult {
   tripId: string;
   compagnie: string;
   companyId: string;
+  /** Fiche publique de la compagnie (§4.4), quand elle en a une. */
+  companySlug: string | null;
   origine: string;
   destination: string;
   depart: string;
@@ -369,7 +371,7 @@ export async function searchTrips(params: {
 
   return db
     .prepare<SearchResult>(
-      `SELECT t.id AS tripId, c.name AS compagnie, c.id AS companyId,
+      `SELECT t.id AS tripId, c.name AS compagnie, c.id AS companyId, c.slug AS companySlug,
               r.origin_city AS origine, r.destination_city AS destination,
               t.departure_datetime AS depart, r.duration_est_min AS dureeEstimeeMin,
               b.category AS categorie, b.vehicle_type AS vehiculeType, p.price_usd AS prixUsd, p.price_cdf AS prixCdf,

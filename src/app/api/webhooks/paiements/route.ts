@@ -1,9 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getDb } from "@/lib/db";
-import { settlePayment } from "@/lib/domain/payments";
+import { settleByReference } from "@/lib/domain/webhook-settlement";
 import { getProvider } from "@/lib/payments/registry";
 import type { PaymentProviderId } from "@/lib/domain/types";
-import type { PaymentRow } from "@/lib/domain/repo";
 
 /**
  * POST /api/webhooks/paiements — §3.2 « Webhook comme mécanisme principal de
@@ -39,21 +37,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ erreur: "SIGNATURE_INVALIDE" }, { status: 401 });
   }
 
-  const payment = await getDb()
-    .prepare<PaymentRow>(`SELECT * FROM payments WHERE provider_ref = ? OR idempotency_key = ?`)
-    .get(event.reference, event.reference);
+  const result = await settleByReference(event.reference, event.statut, event);
   // Un webhook pour un paiement inconnu reçoit 200 : l'opérateur ne doit pas
   // le rejouer indéfiniment, et l'écart sortira à la réconciliation (§3.2).
-  if (!payment) {
+  if (!result.trouve) {
     return NextResponse.json({ recu: true, applique: false, motif: "paiement inconnu" });
   }
 
-  // settlePayment est idempotent : un webhook rejoué n'émet pas de second billet.
-  const result = await settlePayment(payment.id, event.statut, event);
   return NextResponse.json({
     recu: true,
     applique: true,
-    statut: result.payment.status,
-    billetsEmis: result.tickets.length,
+    statut: result.statut,
+    billetsEmis: result.billetsEmis,
   });
 }

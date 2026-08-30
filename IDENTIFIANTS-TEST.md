@@ -37,6 +37,29 @@ Un `GERANT_AGENCE` cumule aussi le rôle `GUICHETIER` sur son agence (§1.5) :
 après connexion, un écran demande de choisir la casquette active pour la
 session.
 
+## Agences référencées seulement — phases 1 et 2
+
+Ces deux agences n'ont **ni bus enregistré, ni plan de sièges, ni caisse, ni
+billet**. Elles sont pourtant visibles dans la recherche et dans l'annuaire :
+c'est le scénario que le produit doit servir en premier.
+
+| Téléphone       | Rôle              | Agence           | Phases ouvertes | Ce qu'elle démontre |
+| --------------- | ----------------- | ---------------- | --------------- | ------------------- |
+| `+243810000020` | `ADMIN_COMPAGNIE` | Kongo Express    | aucune (socle seul) | 5 entrées de menu au lieu de 12. 3 trajets publiés, le voyageur appelle. |
+| `+243810000021` | `ADMIN_COMPAGNIE` | Étoile du Kasaï  | `RESERVATION`, `PAIEMENT` | + Réservations, quota de places, paiement Mobile Money et billets QR. |
+| `+243810000002` | `ADMIN_COMPAGNIE` | Transco Kin      | toutes          | back-office complet — l'état d'arrivée, pas l'état de départ. |
+
+Depuis `/administration`, le `SUPER_ADMIN` coche une phase sur une agence et
+l'écran correspondant apparaît dans son back-office au rechargement suivant.
+Le directeur, lui, replie ou déplie l'affichage depuis
+`/backoffice/parametres` — sans jamais pouvoir ouvrir une phase lui-même.
+
+Écrans à regarder : `/backoffice` (le bloc « Billetterie » disparaît),
+`/backoffice/horaires`, `/backoffice/parametres` (phases et interrupteur de
+vue), `/backoffice/vitrine`, et côté public `/agences/kongo-express` et
+`/agences/etoile-du-kasai`. Avec le compte Kongo Express, `/backoffice/planification`
+affiche l'écran « phase non ouverte » plutôt qu'un formulaire.
+
 ## Chauffeur indépendant (Fiston Kalala)
 
 Créé via le vrai circuit de candidature partenaire (`type: INDEPENDANT`),

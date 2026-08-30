@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { currentSession } from "@/lib/auth/session";
+import { companyAccess, hasModule } from "@/lib/domain/access";
+import { ModuleFerme } from "@/components/module-ferme";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/core/time";
 import { Card, Badge, Empty, Money, Table, Why } from "@/components/ui";
@@ -10,6 +13,12 @@ export const dynamic = "force-dynamic";
 /** §2.2 Planification des trajets. */
 export default async function Planification() {
   const session = await currentSession();
+  // Le layout et la page rendent en parallèle : le `redirect()` du layout
+  // n'empêche pas cette fonction de s'exécuter. Sans cette garde, une session
+  // expirée produit une exception au lieu d'une redirection propre.
+  if (!session?.companyId) redirect("/guichet/connexion");
+  const acces = await companyAccess(session!.companyId!);
+  if (!hasModule(acces, "ERP")) return <ModuleFerme module="ERP" />;
   const db = getDb();
   const companyId = session!.companyId!;
   const gestionnaire = ["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session!.activeRole);

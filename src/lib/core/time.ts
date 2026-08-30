@@ -80,3 +80,56 @@ export function formatTime(isoDate: string, locale = "fr-CD"): string {
     timeZone: "Africa/Kinshasa",
   });
 }
+
+/**
+ * Décalage fixe de Kinshasa (UTC+1, sans heure d'été). Les services réguliers
+ * de la phase 1 sont annoncés en heure locale ("08:00") et n'ont pas de date :
+ * la date vient de la recherche du voyageur, l'instant se recompose ici.
+ */
+export const KINSHASA_OFFSET = "+01:00";
+
+/** "2026-09-15" + "08:00" → instant ISO UTC du départ annoncé. */
+export function departureIso(day: string, time: string): string {
+  return new Date(`${day}T${time}:00.000${KINSHASA_OFFSET}`).toISOString();
+}
+
+/** Jour ISO d'un jour calendaire : 1 = lundi … 7 = dimanche. */
+export function isoWeekday(day: string): number {
+  const weekday = new Date(`${day}T12:00:00.000${KINSHASA_OFFSET}`).getUTCDay();
+  return weekday === 0 ? 7 : weekday;
+}
+
+/** Jour calendaire décalé de n jours, en heure de Kinshasa. */
+export function addDays(day: string, count: number): string {
+  const base = new Date(`${day}T12:00:00.000${KINSHASA_OFFSET}`);
+  return todayInKinshasa(new Date(base.getTime() + count * 86_400_000));
+}
+
+export function formatDay(day: string, locale = "fr-CD"): string {
+  return new Date(`${day}T12:00:00.000${KINSHASA_OFFSET}`).toLocaleDateString(locale, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "Africa/Kinshasa",
+  });
+}
+
+/**
+ * §6 : « Les informations visibles doivent afficher leur dernière date de mise
+ * à jour. » Un voyageur juge la fraîcheur d'un horaire à l'échelle du jour,
+ * pas de la minute.
+ */
+export function freshness(isoDate: string, from: Date = now()): string {
+  const days = Math.floor((from.getTime() - new Date(isoDate).getTime()) / 86_400_000);
+  if (days <= 0) return "aujourd’hui";
+  if (days === 1) return "hier";
+  if (days < 7) return `il y a ${days} jours`;
+  if (days < 14) return "il y a une semaine";
+  if (days < 60) return `il y a ${Math.floor(days / 7)} semaines`;
+  return `il y a ${Math.floor(days / 30)} mois`;
+}
+
+/** Horodatage ISO de N jours en arrière — borne basse des fenêtres d'indicateurs. */
+export function daysAgo(days: number, from: Date = now()): string {
+  return new Date(from.getTime() - days * 86_400_000).toISOString();
+}

@@ -4,6 +4,8 @@ import { currentSession } from "@/lib/auth/session";
 import { openSessionFor, cashSessionSummary } from "@/lib/domain/cash";
 import { tripsForAgencyToday } from "@/lib/domain/bookings";
 import { getAgency } from "@/lib/domain/repo";
+import { companyAccess, hasModule } from "@/lib/domain/access";
+import { ModuleFerme } from "@/components/module-ferme";
 import { formatTime, formatDateTime } from "@/lib/core/time";
 import { Card, Badge, Empty, Money, Stat, Why, Table } from "@/components/ui";
 import { OuvertureCaisse, FermetureCaisse } from "./caisse";
@@ -18,6 +20,19 @@ export default async function AccueilGuichet() {
   }
   if (!session.agencyId) {
     return <Empty>Aucune agence n&apos;est rattachée à ce rôle. Contactez la direction.</Empty>;
+  }
+  // §29 : la vente au guichet appartient à la phase 4. Tant qu'elle n'est pas
+  // ouverte, l'agent voit ce que le module apporte plutôt qu'une caisse vide.
+  const acces = await companyAccess(session.companyId!);
+  if (!hasModule(acces, "ERP")) {
+    return (
+      <ModuleFerme
+        module="ERP"
+        peutDemander={false}
+        retourHref="/guichet/connexion"
+        retourLabel="Changer de rôle"
+      />
+    );
   }
 
   const agence = await getAgency(session.agencyId);

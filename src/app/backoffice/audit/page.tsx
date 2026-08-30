@@ -1,4 +1,6 @@
 import { currentSession } from "@/lib/auth/session";
+import { companyAccess, hasModule } from "@/lib/domain/access";
+import { ModuleFerme } from "@/components/module-ferme";
 import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/core/time";
@@ -39,6 +41,8 @@ export default async function JournalAudit(props: PageProps<"/backoffice/audit">
   const params = await props.searchParams;
   const session = await currentSession();
   if (!session || !["ADMIN_COMPAGNIE", "SUPER_ADMIN"].includes(session.activeRole)) redirect("/backoffice");
+  const acces = await companyAccess(session!.companyId!);
+  if (!hasModule(acces, "ERP")) return <ModuleFerme module="ERP" />;
   const filtreAction = typeof params.action === "string" ? params.action : "";
 
   const db = getDb();

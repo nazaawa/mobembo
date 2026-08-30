@@ -18,6 +18,16 @@ import type { BusCategory, DepartureMode, SeatMapLayout, VehicleType } from "@/l
 import { LAYOUT_PRESETS } from "@/lib/domain/seat-map";
 import { createSeatMap, createBus, createRoute, createTrip } from "@/lib/domain/planning";
 import { createPartnerApplication, reviewPartnerApplication } from "@/lib/domain/partners";
+import { updateCompanyProfile } from "@/lib/domain/directory";
+import { createSchedule } from "@/lib/domain/schedules";
+import { createReservation } from "@/lib/domain/reservations";
+import {
+  initiateReservationPayment,
+  settleReservationPayment,
+} from "@/lib/domain/reservation-payments";
+import { setCompanyModules } from "@/lib/domain/access";
+import { MODULES_COMPLETS, MODULES_PAR_DEFAUT, type CompanyModule } from "@/lib/domain/modules";
+import { todayInKinshasa, addDays, isoWeekday } from "@/lib/core/time";
 import { hashPassword } from "@/lib/auth/password";
 
 const MOT_DE_PASSE_DEMO = "mobembo2026";
@@ -210,6 +220,125 @@ async function seedCompany(plan: CompanyPlan, now: string): Promise<CompanySumma
     staff: plan.staff,
     tripCount,
   };
+}
+
+/**
+ * Phase 1 — une agence référencée qui n'a rien numérisé.
+ *
+ * Ni plan de sièges, ni bus immatriculé, ni trajet daté : uniquement une fiche
+ * publique et des horaires. C'est le cas le plus fréquent au démarrage, et
+ * celui que le produit doit servir sans rien exiger de plus.
+ */
+type AgenceReferenceePlan = {
+  name: string;
+  contactName: string;
+  phone: string;
+  whatsapp: string;
+  city: string;
+  address: string;
+  description: string;
+  services: string;
+  /** Phases ouvertes par Mobembo pour cette agence. */
+  modules?: CompanyModule[];
+  schedules: Array<{
+    originCity: string;
+    destinationCity: string;
+    departureTime: string;
+    days: number[];
+    priceUsd?: number;
+    priceCdf?: number;
+    boardingPoint: string;
+    durationEstMin?: number;
+    vehicleLabel?: string;
+    notes?: string;
+    bookingEnabled?: boolean;
+    onlineQuota?: number;
+  }>;
+};
+
+async function seedAgenceReferencee(
+  plan: AgenceReferenceePlan,
+  now: string,
+  superAdminUserId: string,
+): Promise<{ companyId: string; phone: string; name: string }> {
+  const companyId = newId("cmp");
+  const agencyId = newId("agc");
+  const userId = newId("usr");
+
+  await tx(async (t) => {
+    await t
+      .prepare(
+        `INSERT INTO companies
+         (id, name, logo, status, kind, commission_rate, currency_rate_usd_cdf, currency_rate_at,
+          qr_secret, policy_json, created_at)
+       VALUES (?, ?, NULL, 'ACTIVE', 'COMPAGNIE', 0.06, 2850, ?, ?, ?, ?)`,
+      )
+      .run(companyId, plan.name, now, randomBytes(32).toString("hex"), JSON.stringify(DEFAULT_POLICY), now);
+    await t
+      .prepare(
+        `INSERT INTO agencies
+         (id, company_id, name, city, address, gps, opening_hours, status, ticket_sequence, created_at)
+       VALUES (?, ?, ?, ?, ?, NULL, '06:00-18:00', 'ACTIVE', 0, ?)`,
+      )
+      .run(agencyId, companyId, `${plan.name} — ${plan.city}`, plan.city, plan.address, now);
+    await t
+      .prepare(
+        `INSERT INTO users (id, phone, name, password_hash, status, locale, created_at)
+       VALUES (?, ?, ?, ?, 'ACTIVE', 'fr', ?)`,
+      )
+      .run(userId, plan.phone, plan.contactName, hashPassword(MOT_DE_PASSE_DEMO), now);
+    await t
+      .prepare(
+        `INSERT INTO user_roles (id, user_id, role, company_id, agency_id, created_at)
+       VALUES (?, ?, 'ADMIN_COMPAGNIE', ?, NULL, ?)`,
+      )
+      .run(newId("url"), userId, companyId, now);
+    await t
+      .prepare(
+        `INSERT INTO user_roles (id, user_id, role, company_id, agency_id, created_at)
+       VALUES (?, ?, 'GERANT_AGENCE', ?, ?, ?)`,
+      )
+      .run(newId("url"), userId, companyId, agencyId, now);
+  });
+
+  await setCompanyModules({
+    companyId,
+    modules: plan.modules ?? MODULES_PAR_DEFAUT,
+    actor: { userId: superAdminUserId, role: "SUPER_ADMIN" },
+  });
+
+  await updateCompanyProfile({
+    companyId,
+    description: plan.description,
+    phone: plan.phone,
+    whatsapp: plan.whatsapp,
+    headOfficeCity: plan.city,
+    address: plan.address,
+    services: plan.services,
+    actor: { userId: superAdminUserId, role: "SUPER_ADMIN" },
+  });
+
+  for (const horaire of plan.schedules) {
+    await createSchedule({
+      companyId,
+      agencyId,
+      originCity: horaire.originCity,
+      destinationCity: horaire.destinationCity,
+      departureTime: horaire.departureTime,
+      days: horaire.days,
+      priceUsd: horaire.priceUsd ? toMinor(horaire.priceUsd) : null,
+      priceCdf: horaire.priceCdf ? toMinor(horaire.priceCdf) : null,
+      boardingPoint: horaire.boardingPoint,
+      durationEstMin: horaire.durationEstMin ?? null,
+      vehicleLabel: horaire.vehicleLabel ?? null,
+      notes: horaire.notes ?? null,
+      bookingEnabled: horaire.bookingEnabled ?? false,
+      onlineQuota: horaire.onlineQuota ?? 0,
+      actor: { userId, role: "ADMIN_COMPAGNIE" },
+    });
+  }
+
+  return { companyId, phone: plan.phone, name: plan.contactName };
 }
 
 async function main(): Promise<void> {
@@ -427,18 +556,233 @@ async function main(): Promise<void> {
     actor: { userId: superAdminUserId, role: "SUPER_ADMIN" },
   });
 
+  // ---------------------------------------------------------------------
+  // Phase 1 & 2 : la fiche publique des compagnies déjà numérisées, puis deux
+  // agences qui n'ont, elles, rien numérisé du tout. Le jeu de démonstration
+  // doit contenir les deux, sinon la promesse « vous n'êtes obligé à rien »
+  // n'est vérifiable nulle part.
+  // ---------------------------------------------------------------------
+  const fiches = [
+    {
+      companyId: summaries[0].companyId,
+      description:
+        "Transport interurbain sur l'axe Kinshasa – Kongo-Central depuis 2008. Départs quotidiens en autocar, bagages inclus.",
+      phone: "+243810000002",
+      whatsapp: "+243810000002",
+      headOfficeCity: "Kinshasa",
+      address: "Boulevard Lumumba, Limete, Kinshasa",
+      services: "Bagage de 20 kg inclus\nTransport de colis\nAutocar climatisé\nBillet QR et paiement Mobile Money",
+    },
+    {
+      companyId: summaries[1]?.companyId,
+      description:
+        "Liaisons régulières vers l'intérieur du pays, en bus et en voiture express selon l'axe.",
+      phone: "+243810000006",
+      whatsapp: "+243810000006",
+      headOfficeCity: "Kinshasa",
+      address: "Avenue Kasa-Vubu, Kinshasa",
+      services: "Voiture express\nDéparts matinaux\nTransport de colis",
+    },
+  ].filter((fiche) => fiche.companyId);
+
+  // §29 : chaque agence n'a que les phases qu'elle utilise. Les deux compagnies
+  // historiques exploitent la billetterie complète ; les agences référencées
+  // plus bas n'ont que le socle, et c'est ce contraste qui rend la démo utile.
+  for (const summary of summaries) {
+    await setCompanyModules({
+      companyId: summary.companyId,
+      modules: MODULES_COMPLETS,
+      actor: { userId: superAdminUserId, role: "SUPER_ADMIN" },
+    });
+  }
+
+  for (const fiche of fiches) {
+    await updateCompanyProfile({
+      companyId: fiche.companyId!,
+      description: fiche.description,
+      phone: fiche.phone,
+      whatsapp: fiche.whatsapp,
+      headOfficeCity: fiche.headOfficeCity,
+      address: fiche.address,
+      services: fiche.services,
+      actor: { userId: superAdminUserId, role: "SUPER_ADMIN" },
+    });
+  }
+
+  const agencesReferencees = [
+    await seedAgenceReferencee(
+      {
+        name: "Kongo Express",
+        contactName: "Mamie Nsimba",
+        phone: "+243810000020",
+        whatsapp: "+243810000020",
+        city: "Kinshasa",
+        address: "Rond-point Ngaba, avenue de la Libération",
+        description:
+          "Agence familiale sur l'axe Kinshasa – Matadi. Nous vendons nos billets à l'agence et par téléphone. Nos horaires sont publiés ici pour que vous sachiez à quoi vous attendre.",
+        services: "Bagage de 25 kg inclus\nTransport de colis vers Matadi\nDépart garanti même à moitié plein",
+        // Phase 1 stricte : référencement seul, pas même la réservation.
+        modules: [],
+        schedules: [
+          {
+            originCity: "Kinshasa",
+            destinationCity: "Matadi",
+            departureTime: "06:30",
+            days: [1, 2, 3, 4, 5, 6],
+            priceUsd: 22,
+            priceCdf: 62000,
+            boardingPoint: "Rond-point Ngaba, devant la station",
+            durationEstMin: 330,
+            vehicleLabel: "Bus 60 places",
+            notes: "Présentez-vous 45 minutes avant le départ. Un arrêt repas à Kisantu.",
+          },
+          {
+            originCity: "Matadi",
+            destinationCity: "Kinshasa",
+            departureTime: "07:00",
+            days: [1, 2, 3, 4, 5, 6],
+            priceUsd: 22,
+            priceCdf: 62000,
+            boardingPoint: "Avenue du Port, en face du marché",
+            durationEstMin: 330,
+            vehicleLabel: "Bus 60 places",
+          },
+          {
+            originCity: "Kinshasa",
+            destinationCity: "Kikwit",
+            departureTime: "05:00",
+            days: [2, 5],
+            priceUsd: 35,
+            boardingPoint: "Rond-point Ngaba, devant la station",
+            durationEstMin: 600,
+            notes: "Deux départs par semaine seulement. Appelez la veille pour confirmer.",
+          },
+        ],
+      },
+      now,
+      superAdminUserId,
+    ),
+    await seedAgenceReferencee(
+      {
+        name: "Étoile du Kasaï",
+        contactName: "Papy Tshibangu",
+        phone: "+243810000021",
+        whatsapp: "+243810000021",
+        city: "Kinshasa",
+        address: "Marché de la Liberté, Masina",
+        description:
+          "Nous ouvrons quelques places à la réservation sur Mobembo pour les voyageurs qui viennent de loin, avec paiement Mobile Money à l'avance. Le reste du bus se vend au guichet comme avant.",
+        services: "Bagage de 30 kg inclus\nSièges à l'avant sur demande",
+        modules: ["RESERVATION", "PAIEMENT"],
+        schedules: [
+          {
+            originCity: "Kinshasa",
+            destinationCity: "Matadi",
+            departureTime: "09:30",
+            days: [1, 2, 3, 4, 5, 6, 7],
+            priceUsd: 25,
+            priceCdf: 71000,
+            boardingPoint: "Marché de la Liberté, Masina",
+            durationEstMin: 320,
+            vehicleLabel: "Bus climatisé 55 places",
+            notes: "Réservation en ligne possible : payez à l'agence le jour du départ.",
+            bookingEnabled: true,
+            onlineQuota: 8,
+          },
+          {
+            originCity: "Kinshasa",
+            destinationCity: "Kikwit",
+            departureTime: "06:00",
+            days: [1, 3, 5],
+            priceUsd: 38,
+            boardingPoint: "Marché de la Liberté, Masina",
+            durationEstMin: 580,
+            bookingEnabled: true,
+            onlineQuota: 5,
+          },
+        ],
+      },
+      now,
+      superAdminUserId,
+    ),
+  ];
+
+  // Deux réservations de démonstration sur le prochain départ ouvert, pour que
+  // l'écran « Réservations » de l'agence ne soit pas vide au premier accès.
+  const horaireOuvert = (await db
+    .prepare<{ id: string; days_of_week: string }>(
+      `SELECT id, days_of_week FROM schedules WHERE booking_enabled = 1 ORDER BY online_quota DESC LIMIT 1`,
+    )
+    .get()) as { id: string; days_of_week: string } | undefined;
+  if (horaireOuvert) {
+    const jours = horaireOuvert.days_of_week.split(",").map(Number);
+    let date = addDays(todayInKinshasa(), 1);
+    for (let essai = 0; essai < 8 && !jours.includes(isoWeekday(date)); essai++) {
+      date = addDays(date, 1);
+    }
+    if (jours.includes(isoWeekday(date))) {
+      await createReservation({
+        scheduleId: horaireOuvert.id,
+        travelDate: date,
+        passengerName: "Grâce Mbuyi",
+        passengerPhone: "+243990000001",
+        seats: 2,
+      });
+      const payee = await createReservation({
+        scheduleId: horaireOuvert.id,
+        travelDate: date,
+        passengerName: "Jonas Ilunga",
+        passengerPhone: "+243990000002",
+        seats: 1,
+      });
+
+      // Phase 3 : un billet numérique émis, pour que l'écran « Paiements et
+      // billets » et « Mes billets » aient de quoi montrer dès le premier accès.
+      // L'opérateur simulé confirme au premier polling (§5.2).
+      const paiement = await initiateReservationPayment({
+        reservationId: payee.id,
+        provider: "MPESA",
+        payerPhone: "+243990000002",
+        idempotencyKey: `seed-${payee.id}`,
+      });
+      if (paiement.payment.status === "INITIE") {
+        await settleReservationPayment(paiement.payment.id, "CONFIRME", { source: "seed" });
+      }
+    }
+  }
+
   const counts = (await db
-    .prepare<{ trajets: number; sieges: number; utilisateurs: number }>(
+    .prepare<{
+      trajets: number;
+      sieges: number;
+      utilisateurs: number;
+      horaires: number;
+      reservations: number;
+      billetsReservation: number;
+    }>(
       `SELECT (SELECT COUNT(*) FROM trips) AS trajets,
               (SELECT COUNT(*) FROM trip_seats) AS sieges,
-              (SELECT COUNT(*) FROM users) AS utilisateurs`,
+              (SELECT COUNT(*) FROM users) AS utilisateurs,
+              (SELECT COUNT(*) FROM schedules) AS horaires,
+              (SELECT COUNT(*) FROM schedule_bookings) AS reservations,
+              (SELECT COUNT(*) FROM schedule_tickets) AS billetsReservation`,
     )
-    .get()) as { trajets: number; sieges: number; utilisateurs: number };
+    .get()) as {
+    trajets: number;
+    sieges: number;
+    utilisateurs: number;
+    horaires: number;
+    reservations: number;
+    billetsReservation: number;
+  };
 
   console.log("Jeu de démonstration créé.");
   console.log(`  Compagnies  : ${summaries.map((s) => s.name).join(", ")}`);
   console.log(`  Trajets     : ${counts.trajets}`);
   console.log(`  Sièges      : ${counts.sieges}`);
+  console.log(`  Horaires    : ${counts.horaires} (phase 1, sans bus ni sièges)`);
+  console.log(`  Réservations: ${counts.reservations} (phase 2, sans paiement)`);
+  console.log(`  Billets payés: ${counts.billetsReservation} (phase 3, QR sans siège)`);
   console.log(`  Utilisateurs: ${counts.utilisateurs}`);
   console.log("");
   console.log("Comptes staff — mot de passe commun : " + MOT_DE_PASSE_DEMO);
@@ -455,6 +799,10 @@ async function main(): Promise<void> {
     for (const role of roles) {
       console.log(`  ${independant.phone}  ${role.padEnd(16)} ${independant.name}`);
     }
+  }
+  console.log(`  — Agences référencées seulement (phase 1) —`);
+  for (const agence of agencesReferencees) {
+    console.log(`  ${agence.phone}  ADMIN_COMPAGNIE  ${agence.name}`);
   }
   console.log("");
   console.log("Passager : aucun compte à créer, connexion par OTP SMS.");

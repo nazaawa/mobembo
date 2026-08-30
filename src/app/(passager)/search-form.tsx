@@ -54,7 +54,7 @@ export function SearchForm({
             <span className="h-2.5 w-2.5 rounded-full bg-accent" aria-hidden />
             Aller simple
           </div>
-          <p className="text-xs text-texte-doux">Plusieurs compagnies, une seule recherche</p>
+          <p className="text-xs text-texte-doux">Toutes les agences, une seule recherche</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_48px_1fr_0.9fr_0.82fr] lg:items-end">
           <HeroField label="Départ" icon={<PinIcon />} endIcon={<ChevronIcon />}>
@@ -117,13 +117,13 @@ export function SearchForm({
         </div>
         {!rechercheDisponible && (
           <p role="status" className="mt-4 rounded-[10px] bg-surface-alt px-4 py-3 text-sm leading-6 text-texte-doux">
-            Les villes apparaîtront ici dès qu&apos;une compagnie aura publié ses lignes sur Mobembo.
+            Les villes apparaîtront ici dès qu&apos;une agence aura publié ses trajets sur Mobembo.
           </p>
         )}
         <ul aria-label="Garanties de la recherche" className="mt-5 grid gap-2 border-t border-bordure pt-4 text-xs font-medium text-texte-doux sm:grid-cols-3">
-          <TrustItem>Siège protégé après paiement</TrustItem>
-          <TrustItem>Billet reçu par SMS et QR</TrustItem>
-          <TrustItem>Même prix qu&apos;au guichet</TrustItem>
+          <TrustItem>Horaires publiés par les agences</TrustItem>
+          <TrustItem>Téléphone et WhatsApp de chaque agence</TrustItem>
+          <TrustItem>Réservation en ligne là où elle est ouverte</TrustItem>
         </ul>
       </form>
     );
@@ -189,7 +189,7 @@ export function SearchForm({
       </div>
       {!rechercheDisponible && (
         <p role="status" className="text-sm text-texte-doux sm:col-span-2">
-          Aucune compagnie n&apos;a encore publié de ligne disponible.
+          Aucune agence n&apos;a encore publié de trajet sur cet axe.
         </p>
       )}
     </form>
